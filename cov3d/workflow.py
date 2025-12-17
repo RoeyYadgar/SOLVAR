@@ -398,7 +398,7 @@ def covar_processing(
     cov = covar_cls(
         L,
         covar_rank,
-        pixel_var_estimate=dataset.signal_var,
+        pixel_var_estimate=dataset.estimate_signal_var(),
         fourier_domain=optimize_in_fourier_domain,
         upsampling_factor=upsampling_factor,
     )

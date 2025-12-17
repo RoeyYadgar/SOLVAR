@@ -66,9 +66,6 @@ class CovarDataset(Dataset):
         if self.data_inverted:
             self.images = -1 * self.images
 
-        # TODO: signal var should be estimated after removing projected mean but before applying masking
-        self.estimate_filters_gain()
-        self.estimate_signal_var()
         if apply_preprocessing:
             self.preprocess_from_modules(
                 *self.construct_mean_pose_modules(mean_volume, mask, self.rot_vecs, self.offsets)
@@ -77,6 +74,10 @@ class CovarDataset(Dataset):
         self.dtype = self.images.dtype
         self.mask = torch.tensor(mask.asnumpy()) if mask is not None else None
         self.contrasts = torch.ones((len(self)), dtype=self.offsets.dtype)
+
+        self.radial_filters_gain = None
+        self.signal_rpsd = None
+        self.signal_var = None
 
     def _init_from_source(self, source: "ImageSource") -> None:
         """Initialize dataset from ImageSource object.
@@ -438,32 +439,50 @@ class CovarDataset(Dataset):
             self.noise_var /= self.resolution**2
             self._in_spatial_domain = True
 
-    def estimate_signal_var(self, support_radius: Optional[float] = None, batch_size: int = 512) -> None:
+    def estimate_signal_var(self, support_radius: Optional[float] = None, batch_size: int = 4096) -> None:
         """Estimate signal variance from the dataset.
 
         Args:
             support_radius: Radius for support region
             batch_size: Batch size for processing
         """
+        # This computation should only be done once
+        # the result is cached and returned if called again
+        if self.signal_var is not None:
+            return self.signal_var
+
         # Estimates the signal variance per pixel
         mask = torch.tensor(support_mask(self.resolution, support_radius))
-        mask_size = torch.sum(mask)
 
+        num_unmasked_pixels = 0
         signal_psd = torch.zeros((self.resolution, self.resolution))
         for i in range(0, len(self), batch_size):
             images_masked = self._get_images_for_signal_var(i, batch_size) * mask
+
+            # We cannot use the size of the mask here, because the images may
+            # already have been masked (with a tighter mask) prior to this
+            # function call
+            # TODO: this is not really a good way to get the number of unmasked pixels
+            # ideally, we should cache the size of the projected mask
+            images_threshold = (images_masked.abs() ** 2).mean(dim=(-1, -2)).sqrt() * 1e-6
+            num_unmasked_pixels += (images_masked >= images_threshold.reshape(-1, 1, 1)).sum()
+
             signal_psd += torch.sum(torch.abs(centered_fft2(images_masked)) ** 2, axis=0)
-        signal_psd /= len(self) * (self.resolution**2) * mask_size
+        signal_psd /= (self.resolution**2) * num_unmasked_pixels
         signal_rpsd = average_fourier_shell(signal_psd)
 
         noise_psd = torch.ones((self.resolution, self.resolution)) * self.noise_var / (self.resolution**2)
         noise_rpsd = average_fourier_shell(noise_psd)
 
-        self.signal_rpsd = (signal_rpsd - noise_rpsd) / (self.radial_filters_gain)
+        radial_filters_gain = self.estimate_filters_gain()
+        self.signal_rpsd = (signal_rpsd - noise_rpsd) / radial_filters_gain
         self.signal_rpsd[self.signal_rpsd < 0] = (
             0  # in low snr setting the estimatoin for high radial resolution might not be accurate enough
         )
+
         self.signal_var = sum_over_shell(self.signal_rpsd, self.resolution, 2).item()
+
+        return self.signal_var
 
     def _get_images_for_signal_var(self, start_idx: int, batch_size: int) -> torch.Tensor:
         """Helper method to get images for signal variance estimation.
@@ -473,12 +492,16 @@ class CovarDataset(Dataset):
         end_idx = min(start_idx + batch_size, len(self))
         return self.images[start_idx:end_idx]
 
-    def estimate_filters_gain(self, batch_size: int = 1024) -> None:
+    def estimate_filters_gain(self, batch_size: int = 4096) -> None:
         """Estimate gain factors for CTF filters.
 
         Args:
             batch_size: Batch size for processing
         """
+        # This computation should only be done once
+        # the result is cached and returned if called again
+        if self.radial_filters_gain is not None:
+            return self.radial_filters_gain
 
         average_filters_gain_spectrum = torch.zeros((self.resolution, self.resolution))
         for i in range(0, len(self), batch_size):
@@ -487,10 +510,10 @@ class CovarDataset(Dataset):
         average_filters_gain_spectrum /= len(self)
 
         radial_filters_gain = average_fourier_shell(average_filters_gain_spectrum)
-        estimated_filters_gain = sum_over_shell(radial_filters_gain, self.resolution, 2).item() / (self.resolution**2)
 
-        self.filters_gain = estimated_filters_gain
         self.radial_filters_gain = radial_filters_gain
+
+        return self.radial_filters_gain
 
     def _get_filters_for_filters_gain(self, start_idx: int, batch_size: int) -> torch.Tensor:
         """Helper method to get filters for filter gain estimation.
@@ -526,9 +549,6 @@ class LazyCovarDataset(CovarDataset):
         self._in_spatial_domain = True
         self.apply_preprocessing = apply_preprocessing
 
-        self.estimate_filters_gain()
-        self.estimate_signal_var()
-
         self.mask = torch.tensor(mask.asnumpy()) if mask is not None else None
         self.mean_volume = mean_volume
 
@@ -540,6 +560,10 @@ class LazyCovarDataset(CovarDataset):
         self._softening_kernel_fourier = None
         self._mask_threshold = None
         self.contrasts = torch.ones((len(self)), dtype=self.offsets.dtype)
+
+        self.radial_filters_gain = None
+        self.signal_rpsd = None
+        self.signal_var = None
 
     @property
     def dtype(self):
