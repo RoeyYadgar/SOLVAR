@@ -346,11 +346,37 @@ def sub_starfile(star_input: str, star_output: str, mrcs_index: Any) -> None:
     if isinstance(data, dict) and "particles" in data:
         # Subset the particles dataframe and store as dict
         data["particles"] = data["particles"].iloc[mrcs_index]
-        starfile.write(data, star_output)
     else:
         # Single DataFrame case
         data = data.iloc[mrcs_index]
-        starfile.write(data, star_output)
+
+    input_dir = os.path.dirname(os.path.abspath(star_input))
+    output_dir = os.path.dirname(os.path.abspath(star_output))
+    is_different_dir = input_dir != output_dir
+
+    if is_different_dir:
+        # Get relative path of output file's directory to input file's directory
+        rel_output_dir = os.path.relpath(input_dir, output_dir)
+        # Append rel_output_dir to _rlnImageName in data['particles']
+        if isinstance(data, dict) and "particles" in data:
+            particles = data["particles"]
+            if "rlnImageName" in particles.columns:
+
+                def append_rel_dir(im_name):
+                    # Only prepend rel_output_dir if not already present and rel_output_dir is not '.'
+                    if rel_output_dir != "." and not str(im_name).startswith(rel_output_dir + os.sep):
+                        # The im_name is often like "1@oldname.mrcs" -> keep the prefix (e.g., "1@")
+                        parts = str(im_name).split("@", 1)
+                        if len(parts) == 2:
+                            return f"{parts[0]}@{os.path.join(rel_output_dir, parts[1])}"
+                        else:
+                            return os.path.join(rel_output_dir, str(im_name))
+                    else:
+                        return im_name
+
+                particles["rlnImageName"] = particles["rlnImageName"].apply(append_rel_dir)
+
+    starfile.write(data, star_output)
 
 
 def mrcs_replace_starfile(star_input: str, star_output: str, mrcs_name: str) -> None:

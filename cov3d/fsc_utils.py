@@ -134,6 +134,17 @@ class FourierShell:
 
         return shell_avg
 
+    def varaince_fourier_shell(self, spectrum_signals: torch.Tensor) -> torch.Tensor:
+        spectrum_signals = self._unsqueeze_batch_dim(spectrum_signals)
+        n = spectrum_signals.shape[0]
+
+        shell_var = torch.zeros(n, len(self.radial_values), dtype=spectrum_signals.dtype, device=self.device)
+        for i in range(shell_var.shape[1]):
+            shell_var[:, i] = torch.var(spectrum_signals[:, *self.shell_inds[i]], dim=-1)
+
+        if n == 1:
+            return shell_var[0]
+
     def rpsd(self, signals: torch.Tensor) -> torch.Tensor:
         """Compute radial power spectral density.
 
