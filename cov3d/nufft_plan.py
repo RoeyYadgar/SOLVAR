@@ -400,7 +400,7 @@ class NufftType(Enum):
 @dataclass
 class NufftSpec:
     nufft_type: NufftType
-    sz: Tuple[int, int, int]
+    sz: Tuple[int, int, int] = None
     upsample_factor: int = None
     mode: str = None
     batch_size: int = None
@@ -420,6 +420,12 @@ class NufftSpec:
     @property
     def input_in_fourier(self) -> bool:
         return self.nufft_type == NufftPlanDiscretized
+
+    def update(self, **kwargs):
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                raise AttributeError(f"{k} is not a valid field")
+            setattr(self, k, v)
 
 
 class TorchNufftForward(torch.autograd.Function):

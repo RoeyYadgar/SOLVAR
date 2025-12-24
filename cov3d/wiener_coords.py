@@ -1,13 +1,13 @@
 import math
-from typing import Any, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 from scipy.stats import chi2
 from tqdm import tqdm
 
 from cov3d.dataset import CovarDataset
-from cov3d.nufft_plan import NufftPlan, NufftPlanDiscretized
-from cov3d.projection_funcs import centered_fft3, vol_forward
+from cov3d.nufft_plan import NufftPlan, NufftSpec
+from cov3d.projection_funcs import make_nufft_plan, vol_forward
 
 
 def wiener_coords(
@@ -90,8 +90,7 @@ def latentMAP(
     start_ind: Optional[int] = None,
     end_ind: Optional[int] = None,
     return_coords_covar: bool = False,
-    nufft_plan: type = NufftPlan,
-    **nufft_plan_kwargs: Any,
+    nufft_spec: Optional[NufftSpec] = None,
 ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """Compute maximum a posteriori latent coordinates.
 
@@ -122,17 +121,14 @@ def latentMAP(
     if len(eigenvals.shape) == 1:
         eigenvals = torch.diag(eigenvals)
 
+    if nufft_spec is None:
+        nufft_spec = NufftSpec(nufft_type=NufftPlan)
+    nufft_spec.update(sz=(L,) * 3, batch_size=rank, dtype=dtype, device=device)
+    nufft_plans, eigenvecs = make_nufft_plan(nufft_spec, eigenvecs)
+
     eigenvals_inv = torch.inverse(
         eigenvals + 1e-6 * torch.eye(rank, device=device, dtype=dtype)
     )  # add a small value to avoid numerical instability
-
-    if nufft_plan == NufftPlan:
-        nufft_plans = NufftPlan((L,) * 3, batch_size=rank, dtype=dtype, device=device, **nufft_plan_kwargs)
-    elif nufft_plan == NufftPlanDiscretized:
-        default_kwargs = {"upsample_factor": 2, "mode": "bilinear"}
-        default_kwargs.update(nufft_plan_kwargs)
-        nufft_plans = NufftPlanDiscretized((L,) * 3, **default_kwargs)
-        eigenvecs = centered_fft3(eigenvecs, padding_size=(L * default_kwargs["upsample_factor"],) * 3)
 
     coords = torch.zeros((end_ind - start_ind, rank), device=device)
     if return_coords_covar:
