@@ -778,9 +778,10 @@ class CovarPoseTrainer(CovarTrainer):
 
             self.get_pose_module().set_offsets(offsets, idx=idx)
 
-        normalized_contrast = self.get_pose_module().get_contrasts()
-        normalized_contrast /= torch.mean(normalized_contrast)
-        self.get_pose_module().set_contrasts(normalized_contrast)
+        if self.get_pose_module().use_contrast:
+            normalized_contrast = self.get_pose_module().get_contrasts()
+            normalized_contrast /= torch.mean(normalized_contrast)
+            self.get_pose_module().set_contrasts(normalized_contrast)
 
     def set_pose_grad_req(self, grad: bool) -> None:
         """Set gradient requirements for pose and mean modules.
