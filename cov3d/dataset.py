@@ -732,12 +732,12 @@ class LazyCovarDataset(CovarDataset):
     def _get_images_for_signal_var(self, start_idx, batch_size):
         """Override to use lazy loading for signal variance estimation."""
         end_idx = min(start_idx + batch_size, len(self))
-        return self.src.images(torch.arange(start_idx, end_idx))
+        return self.src.images(torch.arange(start_idx, end_idx)).cpu()
 
     def _get_filters_for_filters_gain(self, start_idx, batch_size):
         """Override to use lazy loading for signal variance estimation."""
         end_idx = min(start_idx + batch_size, len(self))
-        return self.src.get_ctf(torch.arange(start_idx, end_idx))
+        return self.src.get_ctf(torch.arange(start_idx, end_idx)).cpu()
 
     def get_subset(self, idx):
         subset = self.copy()
