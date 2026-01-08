@@ -51,6 +51,11 @@ def getRecovarDataset(
         ind_split = [np.sort(ind_split[0]), np.sort(ind_split[1])]
         perm = np.concatenate(ind_split)
 
+        if ind is not None:
+            # Get perm indices with respect to ind
+            # (such that ind[perm] will give the original perm)
+            _, perm = np.unique(perm, return_inverse=True)
+
         return recovar_ds.get_split_datasets_from_dict(dataset_dict, ind_split, lazy=lazy), perm
     else:
         dataset_dict["ind"] = ind
@@ -170,7 +175,7 @@ def recovarReconstructFromEmbedding(
         embedding_positions: Embedding positions (file path or array)
         n_bins: Number of bins for reconstruction
     """
-    dataset, zs, cov_zs, noise_variance, dataset_perm = prepareDatasetForReconstruction(inputfile)
+    dataset, zs, cov_zs, noise_variance, _ = prepareDatasetForReconstruction(inputfile)
     L = dataset[0].grid_size
     B_factor = 0  # TODO: handle B_factor
     if os.path.isfile(embedding_positions):
