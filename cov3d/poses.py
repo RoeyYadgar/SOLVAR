@@ -41,6 +41,31 @@ def pose_ASPIRE2cryoDRGN(rots: np.ndarray, offsets: np.ndarray, L: int) -> Tuple
     return (rots, offsets)
 
 
+def pad_poses_by_ind(poses: Tuple[np.ndarray, np.ndarray], ind: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Pad pose arrays to a full set of particle indices.
+
+    Given a tuple of pose arrays (rotations and offsets) and an index array,
+    this function constructs zero-padded pose arrays sized for the full range
+    up to the largest index in `ind`. The given poses are inserted at the
+    corresponding indices.
+
+    Args:
+        poses: Tuple of (rotations, offsets), both already corresponding to `ind`.
+        ind: 1D integer array of indices specifying positions where poses should be inserted.
+
+    Returns:
+        full_poses: Tuple of (rotations, offsets), both arrays padded to shape
+                    (max(ind), ...) with the given values at `ind` and zeros elsewhere.
+    """
+    n = np.max(ind) + 1
+    full_poses = (np.zeros((n, 3, 3), dtype=poses[0].dtype), np.zeros((n, 2), dtype=poses[1].dtype))
+
+    full_poses[0][ind] = poses[0]
+    full_poses[1][ind] = poses[1]
+
+    return full_poses
+
+
 def rotvec_to_rotmat(rotvecs: torch.Tensor) -> torch.Tensor:
     """Convert rotation vectors to rotation matrices using Rodrigues' formula.
 

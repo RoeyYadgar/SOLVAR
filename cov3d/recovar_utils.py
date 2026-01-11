@@ -1,3 +1,4 @@
+import logging
 import os
 import pickle
 from typing import Any, Optional, Tuple, Union
@@ -9,6 +10,10 @@ from cryodrgn.source import ImageSource
 from recovar import dataset as recovar_ds
 from recovar import output as recovar_output
 from scipy.ndimage import binary_dilation
+
+from cov3d.poses import pad_poses_by_ind
+
+logger = logging.getLogger(__name__)
 
 
 def getRecovarDataset(
@@ -143,6 +148,24 @@ def prepareDatasetForReconstruction(result_path: str) -> Tuple[Any, np.ndarray, 
     ctf_path = result.get("ctf_path", None)
     poses_path = result.get("poses_path", None)
     ind = result.get("ind", None)
+
+    if ind is not None:
+        with open(poses_path, "rb") as f:
+            poses = pickle.load(f)
+        # Check if ind referes only to a subset of particles, and poses also refer to a subset
+        if len(ind) == len(poses[0]) and len(ind) != (torch.max(ind) + 1):
+            logger.warning(
+                (
+                    "Provided poses only match the indexed provided --ind argument, "
+                    "but a full poses of all particles is expected, rewriting poses to a new file"
+                )
+            )
+            padded_poses = pad_poses_by_ind(poses, ind)
+            new_poses_path = poses_path + "_padded"
+            with open(new_poses_path, "wb") as f:
+                pickle.dump(padded_poses, f)
+            poses_path = new_poses_path
+
     # TODO: Force lazy if dataset is too big - current RECOVAR's lazy implentation seem to be slow?
     lazy = False
     dataset, dataset_perm = getRecovarDataset(
