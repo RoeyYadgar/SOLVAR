@@ -6,16 +6,17 @@ import unittest
 import numpy as np
 import requests
 import torch
-from aspire.utils import grid_3d
 from aspire.volume import LegacyVolume, Volume
 from matplotlib import pyplot as plt
 
 from cov3d.dataset import CovarDataset
 from cov3d.mean import reconstruct_mean, reconstruct_mean_from_halfsets
 from cov3d.nufft_plan import NufftPlanDiscretized, NufftSpec
-from cov3d.projection_funcs import centered_fft3, centered_ifft3
+from cov3d.projection_funcs import centered_fft3
 from cov3d.source import SimulatedSource
 from cov3d.utils import saveVol
+
+from .utils import process_volume
 
 
 def download_mrc(emd_id: int, output_path: str):
@@ -90,29 +91,8 @@ class TestYourClassName(unittest.TestCase):
 
     def _gen_volume(self):
         vol = Volume.load("/home/ry295/pi_data/igg_1d/vols/128_org/000.mrc", dtype=self.dtype_np)
-        if vol.shape[-1] > self.L:
-            vol = vol.downsample(self.L)
-
-        filter = self._get_gaussian_filter(0.2)
-
-        filter *= torch.tensor(grid_3d(self.L, shifted=False, normalized=True)["r"] <= 1)
-
-        vol_tensor = centered_fft3(torch.tensor(vol.asnumpy()))
-        vol_tensor = centered_ifft3(filter * vol_tensor).real
-
-        vol = Volume(vol_tensor.numpy())
-
+        vol = process_volume(vol, self.L, sigma=0.2)
         return vol
-
-    def _get_gaussian_filter(self, sigma=0.5):
-        """Returns a 3D Gaussian filter matching the dataset volume size."""
-        L = self.L
-
-        grid = grid_3d(L, shifted=False, normalized=False)
-        xx, yy, zz = (grid["x"], grid["y"], grid["z"])
-
-        gaussian = np.exp(-(xx**2 + yy**2 + zz**2) / (2 * (L * sigma) ** 2))
-        return torch.tensor(gaussian, dtype=self.dtype)
 
     def _gen_dataset(self, vol: Volume, nufft_type: str = "nufft"):
         if nufft_type == "discretized":
