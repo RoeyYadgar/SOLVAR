@@ -83,6 +83,7 @@ def log_metrics_from_dict(exp, data, keys):
 @click.option("-n", "--name", type=str, help="name of wandb run")
 @click.option("--disable-comet", is_flag=True, default=False, help="wether to disable logging of run to comet")
 @click.option("--run-analysis", is_flag=True, help="wether to run analysis script after algorithm execution")
+@click.option("--num-clusters", type=int, default=0, help="Number of Kmeans cluster to use in analysis")
 @click.option("--gt-dir", type=str, help="Directory of ground truth volumes")
 @click.option("--gt-latent", type=str, help="Path to pkl containing ground truth embedding")
 @click.option("--gt-labels", type=str, help="Path to pkl containing ground truth labels")
@@ -96,6 +97,7 @@ def run_pipeline(
     whiten,
     mask,
     run_analysis,
+    num_clusters=0,
     gt_dir=None,
     gt_latent=None,
     gt_labels=None,
@@ -138,9 +140,9 @@ def run_pipeline(
         analysis_figures = analyze(
             os.path.join(output_dir, "recorded_data.pkl"),
             analyze_with_gt=True,
-            skip_reconstruction=True,
+            skip_reconstruction=num_clusters == 0,
             gt_labels=gt_labels,
-            num_clusters=0,
+            num_clusters=num_clusters,
         )
         for fig_name, fig_path in analysis_figures.items():
             exp.log_image(image_data=fig_path, name=fig_name)
