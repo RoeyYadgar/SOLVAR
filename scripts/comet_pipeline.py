@@ -11,7 +11,7 @@ import torch
 from aspire.storage import StarFile
 from sklearn.metrics import auc
 
-from solvar.workflow import covar_workflow, workflow_click_decorator
+from solvar.commands.workflow import covar_workflow, workflow_click_decorator
 
 # This ensures comet is able to log git info even when running script outside of repo directory
 os.environ["COMET_GIT_DIRECTORY"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -128,12 +128,12 @@ def run_pipeline(
         with open(os.path.join(output_dir, "recorded_data.pkl"), "rb") as fid:
             data_dict = pickle.load(fid)
 
-        training_data = torch.load(os.path.join(output_dir, "training_results.bin"))
+        training_data = torch.load(os.path.join(output_dir, "training_results.bin"), weights_only=False)
 
     if run_analysis:
         # Only import analysis functions when necesseary
         from external.cryobench_analyze import cryobench_analyze
-        from solvar.analyze import analyze
+        from solvar.commands.analyze import analyze
 
         # TODO: handle disable_comet
         # Run analysis

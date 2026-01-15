@@ -8,11 +8,11 @@ from aspire.operators import ArrayFilter, RadialCTFFilter
 from aspire.volume import LegacyVolume, Volume
 from matplotlib import pyplot as plt
 
-from solvar.analyze import analyze
+from solvar.commands.analyze import analyze
+from solvar.commands.workflow import covar_processing, load_mask
 from solvar.dataset import CovarDataset, GTData
 from solvar.source import SimulatedSource
 from solvar.utils import readVols, volsCovarEigenvec
-from solvar.workflow import covar_processing, load_mask
 
 logger = logging.getLogger(__name__)
 

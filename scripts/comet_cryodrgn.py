@@ -6,7 +6,7 @@ import comet_ml
 from comet_pipeline import log_cryobench_analysis_output
 
 from external.cryobench_analyze import cryobench_analyze
-from solvar.analyze import analyze
+from solvar.command.analyze import analyze
 
 
 @click.command()

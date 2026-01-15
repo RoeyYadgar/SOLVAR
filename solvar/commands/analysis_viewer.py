@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import Any, Dict, List, Optional
 
+import click
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -683,15 +684,28 @@ class AnalyzeViewer:
         self.master.destroy()
 
 
-def parse_number_with_suffix(x):
-    if x is None:
-        return None
-    s = x.strip().lower()
-    if s.endswith("k"):
-        return int(float(s[:-1]) * 1_000)
-    if s.endswith("m"):
-        return int(float(s[:-1]) * 1_000_000)
-    return int(s)  # default: just an integer
+class NumberWithSuffix(click.ParamType):
+    """Click parameter type for parsing numbers with suffix (e.g., 10k, 2M, 500)."""
+
+    name = "number_with_suffix"
+
+    def convert(self, value: Any, param: Optional[click.Parameter], ctx: Optional[click.Context]) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        s = str(value).strip().lower()
+        if s.endswith("k"):
+            return int(float(s[:-1]) * 1_000)
+        if s.endswith("m"):
+            return int(float(s[:-1]) * 1_000_000)
+        try:
+            return int(s)
+        except ValueError:
+            self.fail(f"{value!r} is not a valid number (e.g., 10k, 2M, 500)", param, ctx)
+
+
+NUMBER_WITH_SUFFIX = NumberWithSuffix()
 
 
 def read_cryodrgn_format(analysis_dir: str) -> Dict:
@@ -713,39 +727,62 @@ def read_cryodrgn_format(analysis_dir: str) -> Dict:
     return data_dict
 
 
-def main() -> None:
-    """Main function to launch the AnalyzeViewer application.
+@click.command()
+@click.argument("path", required=False, type=str)
+@click.option(
+    "-n",
+    "--max-points",
+    type=NUMBER_WITH_SUFFIX,
+    default=None,
+    help="Max points to display (e.g., 10k, 2M, 500). Used for performance optimization with large datasets.",
+)
+@click.option(
+    "-f",
+    "--format",
+    type=click.Choice(["solvar", "cryodrgn"], case_sensitive=False),
+    default="solvar",
+    help="Input data format (default: solvar)",
+)
+def analysis_viewer_cli(path: Optional[str], max_points: Optional[int], format: str) -> None:
+    """Launch the interactive analysis viewer GUI.
 
-    Creates the main tkinter window and loads analysis data either from command line argument or
-    file dialog. Starts the interactive viewer application.
+    Opens an interactive GUI for visualizing and analyzing coordinate data with
+    UMAP and PCA projections. Users can select cluster coordinates and save/load them.
+
+    PATH: Path to analyze_coordinates pkl file (optional, will prompt if not provided)
     """
     root = tk.Tk()
     root.title("Analyze Coordinates Viewer")
-    import argparse
 
-    parser = argparse.ArgumentParser(description="Analyze Coordinates Viewer")
-    parser.add_argument("path", nargs="?", default=None, help="Path to analyze_coordinates pkl file")
-    parser.add_argument(
-        "-n", "--max-points", type=parse_number_with_suffix, default=None, help="Max points (e.g., 10k, 2M, 500)."
-    )
-    parser.add_argument("-f", "--format", choices=["solvar", "cryodrgn"], default="solvar", help="Input data format")
-    args = parser.parse_args()
-
-    if args.path:
-        path = args.path
+    if path:
+        file_path = path
     else:
-        path = filedialog.askopenfilename(title="Select analyze_coordinates pkl", filetypes=[("Pickle files", "*.pkl")])
-        if not path:
+        file_path = filedialog.askopenfilename(
+            title="Select analyze_coordinates pkl", filetypes=[("Pickle files", "*.pkl")]
+        )
+        if not file_path:
             print("No file selected.")
             return
-    if args.format == "solvar":
-        with open(path, "rb") as f:
+
+    if format.lower() == "solvar":
+        with open(file_path, "rb") as f:
             data = pickle.load(f)
-    elif args.format == "cryodrgn":
-        data = read_cryodrgn_format(path)
-    AnalyzeViewer(root, data, dir=os.path.split(path)[0], max_points=args.max_points)
+    elif format.lower() == "cryodrgn":
+        data = read_cryodrgn_format(file_path)
+    else:
+        raise ValueError(f"Unknown format: {format}")
+
+    AnalyzeViewer(root, data, dir=os.path.split(file_path)[0], max_points=max_points)
     root.protocol("WM_DELETE_WINDOW", root.quit)
     root.mainloop()
+
+
+def main() -> None:
+    """Main function to launch the AnalyzeViewer application.
+
+    This is kept for backward compatibility. Use analysis_viewer_cli() for the Click interface.
+    """
+    analysis_viewer_cli()
 
 
 if __name__ == "__main__":

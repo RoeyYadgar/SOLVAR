@@ -525,7 +525,7 @@ def covar_processing(
     if dataset.mask is not None:
         aspire.volume.Volume(dataset.mask.cpu().numpy()).save(path.join(output_dir, "used_mask.mrc"), overwrite=True)
 
-    training_data = torch.load(path.join(output_dir, "training_results.bin"))
+    training_data = torch.load(path.join(output_dir, "training_results.bin"), weights_only=False)
 
     return data_dict, training_data, default_training_kwargs
 
