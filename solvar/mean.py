@@ -7,19 +7,19 @@ from aspire.utils import grid_3d
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from cov3d.dataset import CovarDataset, LazyCovarDataset, create_dataloader, get_ordered_half_split
-from cov3d.fsc_utils import (
+from solvar.dataset import CovarDataset, LazyCovarDataset, create_dataloader, get_ordered_half_split
+from solvar.fsc_utils import (
     average_fourier_shell,
     expand_fourier_shell,
     rpsd,
     upsample_and_expand_fourier_shell,
     vol_fsc,
 )
-from cov3d.nufft_plan import NufftPlanDiscretized
-from cov3d.poses import get_phase_shift_grid, offset_to_phase_shift
-from cov3d.projection_funcs import centered_fft3, centered_ifft3, im_backward
-from cov3d.source import ImageSource
-from cov3d.utils import get_complex_real_dtype, get_cpu_count, get_torch_device
+from solvar.nufft_plan import NufftPlanDiscretized
+from solvar.poses import get_phase_shift_grid, offset_to_phase_shift
+from solvar.projection_funcs import centered_fft3, centered_ifft3, im_backward
+from solvar.source import ImageSource
+from solvar.utils import get_complex_real_dtype, get_cpu_count, get_torch_device
 
 logger = logging.getLogger(__name__)
 

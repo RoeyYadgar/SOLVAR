@@ -7,8 +7,8 @@ import numpy as np
 import torch
 from aspire.volume import Volume
 
-from cov3d.utils import get_mpi_cpu_count, sub_starfile
-from cov3d.wiener_coords import mahalanobis_distance, mahalanobis_threshold
+from solvar.utils import get_mpi_cpu_count, sub_starfile
+from solvar.wiener_coords import mahalanobis_distance, mahalanobis_threshold
 
 logger = logging.getLogger(__name__)
 

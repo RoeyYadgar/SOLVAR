@@ -9,12 +9,12 @@ import torch
 from aspire.volume import LegacyVolume, Volume
 from matplotlib import pyplot as plt
 
-from cov3d.dataset import CovarDataset
-from cov3d.mean import reconstruct_mean, reconstruct_mean_from_halfsets
-from cov3d.nufft_plan import NufftPlanDiscretized, NufftSpec
-from cov3d.projection_funcs import centered_fft3
-from cov3d.source import SimulatedSource
-from cov3d.utils import saveVol
+from solvar.dataset import CovarDataset
+from solvar.mean import reconstruct_mean, reconstruct_mean_from_halfsets
+from solvar.nufft_plan import NufftPlanDiscretized, NufftSpec
+from solvar.projection_funcs import centered_fft3
+from solvar.source import SimulatedSource
+from solvar.utils import saveVol
 
 from .utils import process_volume
 

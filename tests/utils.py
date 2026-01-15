@@ -3,7 +3,7 @@ import torch
 from aspire.utils import grid_3d
 from aspire.volume import Volume
 
-from cov3d.projection_funcs import centered_fft3, centered_ifft3
+from solvar.projection_funcs import centered_fft3, centered_ifft3
 
 
 def process_volume(vol: Volume, L: int, sigma: float = 0.2):

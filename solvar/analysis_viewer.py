@@ -10,7 +10,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.patches import Polygon as PolygonPatch
 from matplotlib.path import Path as MplPath
 
-from cov3d.utils import sub_starfile
+from solvar.utils import sub_starfile
 
 
 class AnalyzeViewer:

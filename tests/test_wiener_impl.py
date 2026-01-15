@@ -8,11 +8,11 @@ from aspire.operators import RadialCTFFilter
 from aspire.source import Simulation
 from aspire.volume import Volume
 
-from cov3d.covar import Covar
-from cov3d.dataset import CovarDataset
-from cov3d.nufft_plan import NufftPlanDiscretized, NufftSpec
-from cov3d.utils import volsCovarEigenvec
-from cov3d.wiener_coords import latentMAP, wiener_coords
+from solvar.covar import Covar
+from solvar.dataset import CovarDataset
+from solvar.nufft_plan import NufftPlanDiscretized, NufftSpec
+from solvar.utils import volsCovarEigenvec
+from solvar.wiener_coords import latentMAP, wiener_coords
 
 from .utils import process_volume
 

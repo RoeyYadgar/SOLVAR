@@ -11,7 +11,7 @@ import torch
 from aspire.storage import StarFile
 from sklearn.metrics import auc
 
-from cov3d.workflow import covar_workflow, workflow_click_decorator
+from solvar.workflow import covar_workflow, workflow_click_decorator
 
 # This ensures comet is able to log git info even when running script outside of repo directory
 os.environ["COMET_GIT_DIRECTORY"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -132,8 +132,8 @@ def run_pipeline(
 
     if run_analysis:
         # Only import analysis functions when necesseary
-        from cov3d.analyze import analyze
         from external.cryobench_analyze import cryobench_analyze
+        from solvar.analyze import analyze
 
         # TODO: handle disable_comet
         # Run analysis

@@ -1,5 +1,5 @@
 __pycache__/
-cov3d.egg-info/
+solvar.egg-info/
 .vscode/*
 *.out
 *.err

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from aspire.utils import grid_3d
 
-from cov3d.nufft_plan import BaseNufftPlan, NufftSpec, nufft_adjoint, nufft_forward
+from solvar.nufft_plan import BaseNufftPlan, NufftSpec, nufft_adjoint, nufft_forward
 
 
 def pad_tensor(tensor: torch.Tensor, size: List[int], dims: Optional[List[int]] = None) -> torch.Tensor:

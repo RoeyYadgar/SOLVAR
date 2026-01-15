@@ -13,10 +13,10 @@ from aspire.volume import Volume, rotated_grids
 from cryodrgn.ctf import compute_ctf, load_ctf_for_training
 from cryodrgn.source import ImageSource as CryoDRGNImageSource
 
-from cov3d.nufft_plan import NufftPlan, NufftSpec
-from cov3d.poses import get_phase_shift_grid, pose_ASPIRE2cryoDRGN, pose_cryoDRGN2APIRE
-from cov3d.projection_funcs import centered_fft2, centered_ifft2, make_nufft_plan, vol_forward
-from cov3d.utils import get_torch_device
+from solvar.nufft_plan import NufftPlan, NufftSpec
+from solvar.poses import get_phase_shift_grid, pose_ASPIRE2cryoDRGN, pose_cryoDRGN2APIRE
+from solvar.projection_funcs import centered_fft2, centered_ifft2, make_nufft_plan, vol_forward
+from solvar.utils import get_torch_device
 
 
 class ImageSource:

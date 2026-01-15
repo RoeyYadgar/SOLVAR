@@ -5,8 +5,8 @@ import click
 import comet_ml
 from comet_pipeline import log_cryobench_analysis_output
 
-from cov3d.analyze import analyze
 from external.cryobench_analyze import cryobench_analyze
+from solvar.analyze import analyze
 
 
 @click.command()

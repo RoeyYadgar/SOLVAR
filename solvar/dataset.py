@@ -12,19 +12,19 @@ from aspire.volume import Volume, rotated_grids
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from cov3d.covar import Mean
-from cov3d.fsc_utils import average_fourier_shell, sum_over_shell
-from cov3d.nufft_plan import NufftPlan, NufftPlanDiscretized
-from cov3d.poses import PoseModule, rotvec_to_rotmat
-from cov3d.projection_funcs import (
+from solvar.covar import Mean
+from solvar.fsc_utils import average_fourier_shell, sum_over_shell
+from solvar.nufft_plan import NufftPlan, NufftPlanDiscretized
+from solvar.poses import PoseModule, rotvec_to_rotmat
+from solvar.projection_funcs import (
     centered_fft2,
     centered_ifft2,
     get_mask_threshold,
     im_backward,
     preprocess_image_batch,
 )
-from cov3d.source import ImageSource, SimulatedSource
-from cov3d.utils import get_torch_device, set_module_grad, soft_edged_kernel
+from solvar.source import ImageSource, SimulatedSource
+from solvar.utils import get_torch_device, set_module_grad, soft_edged_kernel
 
 logger = logging.getLogger(__name__)
 

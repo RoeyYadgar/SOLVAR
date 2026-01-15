@@ -5,9 +5,9 @@ import torch
 from scipy.stats import chi2
 from tqdm import tqdm
 
-from cov3d.dataset import CovarDataset
-from cov3d.nufft_plan import NufftPlan, NufftSpec
-from cov3d.projection_funcs import make_nufft_plan, vol_forward
+from solvar.dataset import CovarDataset
+from solvar.nufft_plan import NufftPlan, NufftSpec
+from solvar.projection_funcs import make_nufft_plan, vol_forward
 
 
 def wiener_coords(

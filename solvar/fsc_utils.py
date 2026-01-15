@@ -3,7 +3,7 @@ from typing import Tuple, Union
 import torch
 from aspire.utils import grid_2d, grid_3d
 
-from cov3d.projection_funcs import centered_fft3
+from solvar.projection_funcs import centered_fft3
 
 
 class FourierShell:

@@ -12,9 +12,9 @@ from aspire.utils import Rotation
 from aspire.volume import LegacyVolume, rotated_grids
 from torch.autograd import gradcheck
 
-from cov3d import nufft_plan, projection_funcs
-from cov3d.covar import Mean
-from cov3d.poses import PoseModule, rotvec_to_rotmat
+from solvar import nufft_plan, projection_funcs
+from solvar.covar import Mean
+from solvar.poses import PoseModule, rotvec_to_rotmat
 
 
 class TestTorchWraps(unittest.TestCase):

@@ -2,8 +2,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 
-from cov3d.fsc_utils import expand_fourier_shell
-from cov3d.projection_funcs import centered_fft3, centered_ifft3, crop_tensor
+from solvar.fsc_utils import expand_fourier_shell
+from solvar.projection_funcs import centered_fft3, centered_ifft3, crop_tensor
 
 
 class VolumeBase(torch.nn.Module):

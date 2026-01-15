@@ -3,10 +3,10 @@ from typing import Any, Dict, Tuple
 import torch
 from torch import distributed as dist
 
-from cov3d.covar import Covar
-from cov3d.covar_sgd import CovarTrainer, cost
-from cov3d.nufft_plan import NufftPlan
-from cov3d.wiener_coords import wiener_coords
+from solvar.covar import Covar
+from solvar.covar_sgd import CovarTrainer, cost
+from solvar.nufft_plan import NufftPlan
+from solvar.wiener_coords import wiener_coords
 
 
 class IterativeCovarTrainer(CovarTrainer):

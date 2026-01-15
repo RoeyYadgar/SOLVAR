@@ -13,10 +13,10 @@ from matplotlib import pyplot as plt
 from sklearn.cluster import KMeans
 from umap import UMAP
 
-from cov3d import reconstruct_utils
-from cov3d.fsc_utils import covar_fsc
-from cov3d.recovar_utils import recovarReconstructFromEmbedding
-from cov3d.trajectory import compute_density, compute_trajectory, find_closet_idx, pick_trajectory_pairs
+from solvar import reconstruct_utils
+from solvar.fsc_utils import covar_fsc
+from solvar.recovar_utils import recovarReconstructFromEmbedding
+from solvar.trajectory import compute_density, compute_trajectory, find_closet_idx, pick_trajectory_pairs
 
 logger = logging.getLogger(__name__)
 

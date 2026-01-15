@@ -4,8 +4,8 @@ import numpy as np
 import torch
 from aspire.utils import grid_2d
 
-from cov3d.newton_opt import BlockNewtonOptimizer
-from cov3d.projection_funcs import centered_fft2, centered_ifft2, crop_image
+from solvar.newton_opt import BlockNewtonOptimizer
+from solvar.projection_funcs import centered_fft2, centered_ifft2, crop_image
 
 
 def pose_cryoDRGN2APIRE(poses: Tuple[np.ndarray, np.ndarray], L: int) -> Tuple[np.ndarray, np.ndarray]:

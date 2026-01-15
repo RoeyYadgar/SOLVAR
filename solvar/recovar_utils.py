@@ -11,7 +11,7 @@ from recovar import dataset as recovar_ds
 from recovar import output as recovar_output
 from scipy.ndimage import binary_dilation
 
-from cov3d.poses import pad_poses_by_ind
+from solvar.poses import pad_poses_by_ind
 
 logger = logging.getLogger(__name__)
 

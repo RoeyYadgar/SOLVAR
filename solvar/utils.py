@@ -15,7 +15,7 @@ from aspire.volume import Volume
 from numpy import random
 from sklearn.decomposition import PCA
 
-from cov3d.projection_funcs import centered_fft2, centered_fft3
+from solvar.projection_funcs import centered_fft2, centered_fft3
 
 logger = logging.getLogger(__name__)
 

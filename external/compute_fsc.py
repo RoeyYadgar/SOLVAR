@@ -17,7 +17,7 @@ from CryoBench.metrics.fsc import plot_fsc
 from CryoBench.metrics.fsc.utils import interface, volumes
 from CryoBench.metrics.fsc.utils.volumes import numfile_sortkey
 
-from cov3d.recovar_utils import recovarReconstructFromEmbedding
+from solvar.recovar_utils import recovarReconstructFromEmbedding
 
 logging.basicConfig(
     level=logging.INFO,

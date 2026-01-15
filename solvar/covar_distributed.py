@@ -9,11 +9,11 @@ from torch import distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 
-from cov3d.covar import Covar, Mean
-from cov3d.covar_sgd import CovarPoseTrainer, CovarTrainer, compute_updated_fourier_reg
-from cov3d.dataset import CovarDataset, GTData, create_dataloader
-from cov3d.poses import PoseModule
-from cov3d.utils import get_cpu_count
+from solvar.covar import Covar, Mean
+from solvar.covar_sgd import CovarPoseTrainer, CovarTrainer, compute_updated_fourier_reg
+from solvar.dataset import CovarDataset, GTData, create_dataloader
+from solvar.poses import PoseModule
+from solvar.utils import get_cpu_count
 
 logger = logging.getLogger(__name__)
 

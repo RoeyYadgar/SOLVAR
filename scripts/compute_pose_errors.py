@@ -23,7 +23,7 @@ import numpy as np
 import torch
 
 # Import error computation functions from the existing codebase
-from cov3d.poses import in_plane_rot_error, offset_mean_error, out_of_plane_rot_error
+from solvar.poses import in_plane_rot_error, offset_mean_error, out_of_plane_rot_error
 
 
 def load_cryodrgn_poses(poses_file: str) -> Tuple[np.ndarray, np.ndarray]:

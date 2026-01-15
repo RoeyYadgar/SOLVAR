@@ -8,9 +8,9 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from cov3d.covar import Covar, Mean
-from cov3d.dataset import CovarDataset, GTData, create_dataloader, get_dataloader_batch_size
-from cov3d.fsc_utils import (
+from solvar.covar import Covar, Mean
+from solvar.dataset import CovarDataset, GTData, create_dataloader, get_dataloader_batch_size
+from solvar.fsc_utils import (
     average_fourier_shell,
     covar_fsc,
     expand_fourier_shell,
@@ -18,17 +18,17 @@ from cov3d.fsc_utils import (
     upsample_and_expand_fourier_shell,
     vol_fsc,
 )
-from cov3d.mean import reconstruct_mean_from_halfsets, reconstruct_mean_from_halfsets_DDP
-from cov3d.newton_opt import BlockwiseLBFGS
-from cov3d.nufft_plan import NufftPlan, NufftPlanDiscretized
-from cov3d.poses import (
+from solvar.mean import reconstruct_mean_from_halfsets, reconstruct_mean_from_halfsets_DDP
+from solvar.newton_opt import BlockwiseLBFGS
+from solvar.nufft_plan import NufftPlan, NufftPlanDiscretized
+from solvar.poses import (
     PoseModule,
     estimate_image_offsets_newton,
     in_plane_rot_error,
     offset_mean_error,
     out_of_plane_rot_error,
 )
-from cov3d.projection_funcs import (
+from solvar.projection_funcs import (
     centered_fft2,
     centered_fft3,
     centered_ifft2,
@@ -39,8 +39,8 @@ from cov3d.projection_funcs import (
     preprocess_image_batch,
     vol_forward,
 )
-from cov3d.utils import cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs, soft_edged_kernel
-from cov3d.wiener_coords import compute_latentMAP_batch
+from solvar.utils import cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs, soft_edged_kernel
+from solvar.wiener_coords import compute_latentMAP_batch
 
 logger = logging.getLogger(__name__)
 
