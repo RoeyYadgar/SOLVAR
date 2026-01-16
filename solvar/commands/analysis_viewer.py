@@ -727,7 +727,7 @@ def read_cryodrgn_format(analysis_dir: str) -> Dict:
     return data_dict
 
 
-@click.command()
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
 @click.argument("path", required=False, type=str)
 @click.option(
     "-n",

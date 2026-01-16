@@ -647,7 +647,7 @@ def workflow_click_decorator(func: Callable) -> Callable:
     return wrapper
 
 
-@click.command()
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
 @workflow_click_decorator
 def covar_workflow_cli(**kwargs: Any) -> None:
     """Command-line interface for covariance workflow.

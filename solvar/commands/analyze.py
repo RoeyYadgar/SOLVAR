@@ -21,6 +21,14 @@ from solvar.trajectory import compute_density, compute_trajectory, find_closet_i
 logger = logging.getLogger(__name__)
 
 
+RECONSTRUCT_METHODS = {
+    "recovar": recovarReconstructFromEmbedding,
+    "relion": reconstruct_utils.relionReconstructFromEmbedding,
+    "reprojection": reconstruct_utils.reprojectVolumeFromEmbedding,
+    "relion_disjoint": reconstruct_utils.relionReconstructFromEmbeddingDisjointSets,
+}
+
+
 def get_embedding_reconstruct_func(method: str) -> Callable:
     """Get the reconstruction function for a given method.
 
@@ -33,14 +41,8 @@ def get_embedding_reconstruct_func(method: str) -> Callable:
     Raises:
         KeyError: If method is not supported
     """
-    methods = {
-        "recovar": recovarReconstructFromEmbedding,
-        "relion": reconstruct_utils.relionReconstructFromEmbedding,
-        "reprojection": reconstruct_utils.reprojectVolumeFromEmbedding,
-        "relion_disjoint": reconstruct_utils.relionReconstructFromEmbeddingDisjointSets,
-    }
 
-    return methods[method]
+    return RECONSTRUCT_METHODS[method]
 
 
 def create_scatter_figure(
@@ -246,8 +248,8 @@ def plot_volume_projections(volumes: np.ndarray) -> plt.Figure:
     return fig
 
 
-@click.command()
-@click.option("-i", "--result-data", type=str, help="path to pkl output of the algorithm")
+@click.command(context_settings={"help_option_names": ["-h", "--help"]})
+@click.option("-i", "--result-data", type=str, help="Output directory of SOLVAR run or path to pkl output of the run")
 @click.option(
     "-o",
     "--output-dir",
@@ -269,7 +271,12 @@ def plot_volume_projections(volumes: np.ndarray) -> plt.Figure:
     default=None,
     help="path to pkl containing latent coords to be used as cluster centers instead of k-means",
 )
-@click.option("--reconstruct-method", type=str, default="recovar", help="which volume reconstruction method to use")
+@click.option(
+    "--reconstruct-method",
+    type=click.Choice(list(RECONSTRUCT_METHODS.keys())),
+    default="recovar",
+    help="which volume reconstruction method to use",
+)
 @click.option("--skip-reconstruction", is_flag=True, help="whether to skip reconstruction of k-means cluster centers")
 @click.option(
     "--skip-coor-analysis", is_flag=True, help="whether to skip coordinate analysis (kmeans clustering & umap)"
@@ -317,7 +324,7 @@ def analyze(
     """Perform comprehensive analysis of covariance estimation results.
 
     Args:
-        result_data: Path to pickle file containing algorithm results
+        result_data: Output directory of SOLVAR run or path to pkl output of the run
         output_dir: Directory to store analysis output (defaults to result_data directory)
         analyze_with_gt: Whether to perform analysis with ground truth eigenvolumes
         num_clusters: Number of k-means clusters for reconstruction
@@ -332,6 +339,8 @@ def analyze(
     Returns:
         Dictionary mapping figure names to file paths
     """
+    if os.path.isdir(result_data):
+        result_data = os.path.join(result_data, "recorded_data.pkl")
     with open(result_data, "rb") as f:
         data = pickle.load(f)
 
