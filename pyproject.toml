@@ -13,19 +13,21 @@ dependencies = [
     "cufinufft>=2.3.0",
     "finufft>=2.3.0",
     "matplotlib>=3.6.3",
-    "numpy==1.26.4",
-    "pandas<2",
+    "numpy<1.27",
+    "pandas<3",
     "scikit-learn==1.6.1",
     "scipy>=1.15.0",
     "tqdm==4.67.1",
     "umap-learn",
+    "etils",
     "cryodrgn>=3.4.0",
     "matplotlib_scalebar==0.9.0",
     "dataframe_image==0.2.7",
-    "starfile>=0.5.1",
-    "tensorflow==2.19.0",
+    "starfile",
+    "tensorflow_cpu",
     "colorlog>=6.9.0",
-    "scikit-fmm"
+    "scikit-fmm",
+    "torch<2.6.0"
 ]
 
 [project.optional-dependencies]
