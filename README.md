@@ -4,7 +4,7 @@ SOLVAR is a tool for heterogeneity analysis in cryo-EM. SOLVAR estimates the pri
 
 ## Installation
 
-SOLVAR uses cryoDRGN \todo{cite} for reading particle data and has the same input interface as cryoDRGN, and uses RECOVAR \todo{cite} for heterogneous reconstruction (from the latent embedding produced by SOLVAR).
+SOLVAR uses [cryoDRGN](https://github.com/ml-struct-bio/cryodrgn) for reading particle data and has the same input interface as cryoDRGN, and uses [RECOVAR](https://github.com/ma-gilles/recovar) for heterogneous reconstruction (from the latent embedding produced by SOLVAR).
 Follow the instructions bellow for installing SOLVAR.
 ```
 conda create --name solvar python=3.11
@@ -16,7 +16,7 @@ pip install -e .
 #Install recovar with no dependecies - due to some dependecies confclits
 pip install recovar --no-deps
 ```
-**Note:** For reconstruction alternatives (see below \todo{cite}), SOLVAR relies on RELION. To use these features, you must have RELION installed and ensure that `relion_reconstruct` is available in your system path.
+**Note:** For reconstruction alternatives ([see below](#running-the-analysis-pipeline)), SOLVAR relies on [RELION](https://github.com/3dem/relion). To use these features, you must have RELION installed and ensure that `relion_reconstruct` is available in your system path.
 
 
 ## Running SOLVAR
@@ -155,7 +155,7 @@ The `--override-particles` argument is very useful for two cases:
 * If we downsampled the particle stack and then ran SOLVAR, we can reconstruct from the original particle size by using `--override-particles og_size_stack.star same_ctf.pkl same_poses.pkl`.
 * If we want to reconstruct from volumes with a different poses then what SOLVAR was given, for example if `--optimize-pose` was used we can reconstruct volumes with the new refined poses by using `--override-particles same_stack.star same_ctf.pkl /path/to/refined_poses.pkl`.
 
-By default SOLVAR uses RECOVAR's reconstruction algorithm and its implementation \todo{cite}. We can use other reconstruction methods by specifying `--reconstruct-methods`.
+By default SOLVAR uses [RECOVAR's reconstruction algorithm](https://github.com/ma-gilles/recovar) and its implementation. We can use other reconstruction methods by specifying `--reconstruct-methods`.
 
 ### Interactive analysis viewer
 

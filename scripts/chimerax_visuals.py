@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from solvar.utils import readVols
 
-CHIMERAX_PATH = "/usr/bin/chimerax"
+CHIMERAX_PATH = "chimerax"
 
 
 class CXCFile:
@@ -65,16 +65,30 @@ def init_CXC():
     CXC = CXCFile()
 
 
-def save_volume_figure(volume_path, output_image, resolution=500, color="#ffffa0ff", level=None, lighting="full"):
+def save_volume_figure(
+    volume_path,
+    output_image,
+    resolution=500,
+    color="#ffffa0ff",
+    level=None,
+    lighting="full",
+    supersample=3,
+    cxc_commands=None,
+):
     # CXC = CXCFile()
     CXC.add(f"open {volume_path}")
     CXC.add(f"volume #1 color {color}")
     if level is not None:
-        CXC.add(f"volume all level {level}")
+        CXC.add(f"volume #1 level {level}")
     CXC.add(f"lighting {lighting}")
     CXC.add("surface dust #1")
-    CXC.add(f"save {output_image} transparentBackground true width {resolution} height {resolution} supersample 3")
-    CXC.add("close #1")
+    if cxc_commands is not None:
+        [CXC.add(c) for c in cxc_commands]
+    CXC.add(
+        f"save {output_image} transparentBackground true "
+        f"width {resolution} height {resolution} supersample {supersample}"
+    )
+    CXC.add("close all")
     # CXC.execute()
 
 
@@ -117,6 +131,7 @@ def save_volumes_figure(
     remove_individual_figures=True,
     create_gif=False,
     cxc_commands=None,
+    per_vol_cxc_commands=None,
     **chimera_kwargs,
 ):
 
@@ -139,11 +154,6 @@ def save_volumes_figure(
 
     init_CXC()
     CXC.set_view(view_commands)
-    if cxc_commands is not None:
-        if isinstance(cxc_commands, str):
-            CXC.add(cxc_commands)
-        elif isinstance(cxc_commands, list):
-            [CXC.add(c) for c in cxc_commands]
     if isinstance(volume_path, str):
         vols = Volume.load(volume_path)
         num_vols = len(vols)
@@ -161,7 +171,12 @@ def save_volumes_figure(
         outputs = []
         for i, v in enumerate(volume_path):
             output_vol = os.path.join(output_dir, f"{vol_prefix}_{i}.png")
-            save_volume_figure(v, output_vol, **prep_kwargs(chimera_kwargs, i))
+            if cxc_commands is not None:
+                if isinstance(cxc_commands, str):
+                    CXC.add(cxc_commands)
+                elif isinstance(cxc_commands, list):
+                    [CXC.add(c) for c in cxc_commands]
+            save_volume_figure(v, output_vol, cxc_commands=per_vol_cxc_commands, **prep_kwargs(chimera_kwargs, i))
             outputs.append(output_vol)
 
     CXC.execute()
@@ -234,7 +249,7 @@ def concat_images(images, output_image, output_shape):
     for idx, im in enumerate(images):
         x_offset = (idx % output_shape[1]) * img_width
         y_offset = (idx // output_shape[1]) * img_height
-        new_image.paste(im, (x_offset, y_offset), im)
+        new_image.paste(im, (x_offset, y_offset))
 
     new_image.save(output_image)
 
