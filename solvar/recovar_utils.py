@@ -201,7 +201,7 @@ def recovarReconstructFromEmbedding(
     dataset, zs, cov_zs, noise_variance, _ = prepareDatasetForReconstruction(inputfile)
     L = dataset[0].grid_size
     B_factor = 0  # TODO: handle B_factor
-    if os.path.isfile(embedding_positions):
+    if isinstance(embedding_positions, str):
         with open(embedding_positions, "rb") as f:
             embedding_positions = pickle.load(f)
 
