@@ -64,9 +64,9 @@ class ImageSource:
         self.particles_path = particles_path
         self.device = torch.device("cpu")
         self.image_source = CryoDRGNImageSource.from_file(self.particles_path, indices=indices)
-        if self.image_source.dtype == "float32":
+        if self.image_source.dtype == "float32" or self.image_source.dtype == np.float32:
             self.dtype = torch.float32
-        elif self.image_source.dtype == "float64":
+        elif self.image_source.dtype == "float64" or self.image_source.dtype == np.float64:
             self.dtype = torch.float64
         else:
             raise ValueError(f"Unsupported dtype: {self.image_source.dtype}. Only float32 and float64 are supported.")
