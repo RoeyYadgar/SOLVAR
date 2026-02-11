@@ -13,8 +13,15 @@ from sklearn.metrics import auc
 
 from solvar.commands.workflow import covar_workflow, workflow_click_decorator
 
+"""
+This script is used to log a full SOLVAR pipeline into comet.
+Meant to be used for development and testing with editable install.
+"""
+
 # This ensures comet is able to log git info even when running script outside of repo directory
-os.environ["COMET_GIT_DIRECTORY"] = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.environ["COMET_GIT_DIRECTORY"] = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add the repo directory to path so additional scripts can be imported
+sys.path.append(os.environ["COMET_GIT_DIRECTORY"])
 
 
 def log_cryobench_analysis_output(exp, result_dir, gt_dir, gt_latent, gt_labels):

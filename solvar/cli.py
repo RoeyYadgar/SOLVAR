@@ -8,6 +8,7 @@ import click
 
 from solvar.commands.analysis_viewer import analysis_viewer_cli
 from solvar.commands.analyze import analyze_cli
+from solvar.commands.comet_pipeline import run_pipeline as comet_pipeline_cli
 from solvar.commands.workflow import covar_workflow_cli
 
 
@@ -22,6 +23,7 @@ def cli() -> None:
 cli.add_command(analyze_cli, name="analyze")
 cli.add_command(covar_workflow_cli, name="workflow")
 cli.add_command(analysis_viewer_cli, name="analysis-viewer")
+cli.add_command(comet_pipeline_cli, name="comet-pipeline")
 
 
 def main() -> None:
