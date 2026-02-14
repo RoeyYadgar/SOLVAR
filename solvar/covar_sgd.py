@@ -29,7 +29,6 @@ from solvar.poses import (
     out_of_plane_rot_error,
 )
 from solvar.projection_funcs import (
-    centered_fft2,
     centered_fft3,
     centered_ifft2,
     crop_image,
@@ -64,7 +63,6 @@ class CovarTrainer:
         training_log: Dictionary storing training metrics
         num_reduced_lr_before_stop: Number of LR reductions before stopping
         scheduler_patiece: Patience for learning rate scheduler
-        apply_masking_on_epoch: Whether to apply masking during training
         fourier_reg: Fourier domain regularization term
     """
 
@@ -109,7 +107,6 @@ class CovarTrainer:
 
         self.num_reduced_lr_before_stop = 4
         self.scheduler_patiece = 0
-        self.apply_masking_on_epoch = self.dataset.mask is not None
         self.fourier_reg = None
 
     @property
@@ -390,12 +387,6 @@ class CovarTrainer:
 
             self.scheduler.step(self.cost_in_epoch)
             logger.debug(f"New learning rate set to {self.scheduler.get_last_lr()}")
-
-            # Apply masking on covar vectors
-            if self.apply_masking_on_epoch:
-                with torch.no_grad():
-                    mask = self.dataset.mask.to(self.device) > 0.3
-                    self.covar.vectors.data.copy_(self.covar.vectors.data * mask)
 
             if self.logTraining and self.save_path is not None:
                 self.training_log["epoch_run_time"].append(epoch_end_time - epoch_start_time)
@@ -726,10 +717,6 @@ class CovarPoseTrainer(CovarTrainer):
                 .detach()
             )
 
-            mask_forward = vol_forward(self.mask, self.nufft_plans, filters=None, fourier_domain=False).squeeze(1)
-            mask_forward = mask_forward > self.mask_threshold
-            soft_mask = centered_ifft2(centered_fft2(mask_forward) * softening_kernel_fourier).real
-
             projected_eigenvecs = vol_forward(
                 self._covar(dummy_var=None).detach(),
                 self.nufft_plans,
@@ -770,7 +757,6 @@ class CovarPoseTrainer(CovarTrainer):
             offsets = estimate_image_offsets_newton(
                 images,
                 mean_forward,
-                mask=soft_mask,
                 init_offsets=self.get_pose_module().get_offsets()[idx].detach(),
                 in_fourier_domain=self.optimize_in_fourier_domain,
                 obj_func=obj_func,
@@ -857,9 +843,6 @@ class CovarPoseTrainer(CovarTrainer):
                 filters,
                 (pts_rot, phase_shift),
                 self.mean(dummy_var=None),
-                self.mask,
-                self.mask_threshold,
-                softening_kernel_fourier,
                 fourier_domain=self.optimize_in_fourier_domain,
             )
 
@@ -990,8 +973,7 @@ class CovarPoseTrainer(CovarTrainer):
         """
         while self.downsample_factor >= 0:
             logger.debug(f"Using downsample factor of {self.downsample_factor}")
-            self.apply_masking_on_epoch = self.downsample_factor == 0
-            super().train_epochs(max_epochs, **training_kwargs)
+            super().train_epochs(max_epochs, restart_optimizer=True)
             self.downsample_factor -= 1
         self.downsample_factor = 0
 

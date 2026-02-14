@@ -9,8 +9,8 @@ from solvar.projection_funcs import centered_fft3, centered_ifft3, crop_tensor
 class VolumeBase(torch.nn.Module):
     """Base class for volume operations with Fourier domain support.
 
-    Provides common functionality for volume classes including grid correction
-    and domain conversion between spatial and Fourier representations.
+    Provides common functionality for volume classes including grid correction,
+    optional volume mask, and domain conversion between spatial and Fourier representations.
 
     Attributes:
         resolution: Volume resolution (cubic volumes assumed)
@@ -18,6 +18,7 @@ class VolumeBase(torch.nn.Module):
         _in_spatial_domain: Whether volume is currently in spatial domain
         upsampling_factor: Factor for Fourier domain upsampling
         grid_correction: Grid correction tensor for NUFFT approximation
+        volume_mask: Optional volume mask for masking
     """
 
     def __init__(
@@ -26,6 +27,7 @@ class VolumeBase(torch.nn.Module):
         dtype: torch.dtype = torch.float32,
         fourier_domain: bool = False,
         upsampling_factor: int = 2,
+        volume_mask: Optional[torch.Tensor] = None,
     ) -> None:
         """Initialize VolumeBase.
 
@@ -34,6 +36,7 @@ class VolumeBase(torch.nn.Module):
             dtype: Data type for volume tensors
             fourier_domain: Whether to start in Fourier domain
             upsampling_factor: Factor for Fourier domain upsampling
+            volume_mask: Optional volume mask for masking
         """
         super().__init__()
         self.resolution = resolution
@@ -41,6 +44,7 @@ class VolumeBase(torch.nn.Module):
         self._in_spatial_domain = not fourier_domain
         self.upsampling_factor = upsampling_factor
         self.grid_correction = None
+        self.volume_mask = volume_mask
 
     def init_grid_correction(self, nufft_disc: str) -> None:
         """Initialize grid correction for NUFFT approximation.
@@ -65,7 +69,7 @@ class VolumeBase(torch.nn.Module):
         self.grid_correction = sinc_volume.to(self.device)
 
     def to(self, *args: Any, **kwargs: Any) -> "VolumeBase":
-        """Move module to device and update grid correction.
+        """Move module to device and update grid correction and volume mask.
 
         Args:
             *args: Positional arguments for torch.nn.Module.to()
@@ -77,10 +81,27 @@ class VolumeBase(torch.nn.Module):
         super().to(*args, **kwargs)
         if self.grid_correction is not None:
             self.grid_correction = self.grid_correction.to(*args, **kwargs)
+        if self.volume_mask is not None:
+            self.volume_mask = self.volume_mask.to(*args, **kwargs)
         return self
 
+    def get_volume_mask(self) -> Optional[torch.Tensor]:
+        """Get volume mask in appropriate domain.
+
+        Returns:
+            Volume mask tensor in current domain, or None if no mask
+        """
+        if self.volume_mask is None:
+            return None
+        if not self._in_spatial_domain:
+            return centered_fft3(
+                self.volume_mask / self.grid_correction if self.grid_correction is not None else self.volume_mask,
+                padding_size=(self.resolution * self.upsampling_factor,) * 3,
+            )
+        return self.volume_mask
+
     def state_dict(self, *args: Any, **kwargs: Any) -> dict:
-        """Get state dictionary including domain and grid correction info.
+        """Get state dictionary including domain, grid correction, and volume mask.
 
         Args:
             *args: Positional arguments for super().state_dict()
@@ -94,12 +115,13 @@ class VolumeBase(torch.nn.Module):
             {
                 "_in_spatial_domain": self._in_spatial_domain,
                 "grid_correction": self.grid_correction.to("cpu") if self.grid_correction is not None else None,
+                "volume_mask": self.volume_mask.to("cpu") if self.volume_mask is not None else None,
             }
         )
         return state_dict
 
     def load_state_dict(self, state_dict: dict, *args: Any, **kwargs: Any) -> None:
-        """Load state dictionary including domain and grid correction info.
+        """Load state dictionary including domain, grid correction, and volume mask.
 
         Args:
             state_dict: State dictionary to load
@@ -108,6 +130,7 @@ class VolumeBase(torch.nn.Module):
         """
         self._in_spatial_domain = state_dict.pop("_in_spatial_domain")
         self.grid_correction = state_dict.pop("grid_correction")
+        self.volume_mask = state_dict.pop("volume_mask")
         super().load_state_dict(state_dict, *args, **kwargs)
         return
 
@@ -121,7 +144,6 @@ class Mean(VolumeBase):
     Attributes:
         volume: Normalized volume tensor (parameter)
         log_volume_amplitude: Log of volume amplitude (parameter)
-        volume_mask: Optional volume mask for masking
     """
 
     def __init__(
@@ -144,14 +166,16 @@ class Mean(VolumeBase):
             upsampling_factor: Factor for Fourier domain upsampling
         """
         super().__init__(
-            resolution=resolution, dtype=dtype, fourier_domain=fourier_domain, upsampling_factor=upsampling_factor
+            resolution=resolution,
+            dtype=dtype,
+            fourier_domain=fourier_domain,
+            upsampling_factor=upsampling_factor,
+            volume_mask=volume_mask,
         )
 
         volume, log_volume_amplitude = self._get_mean_representation(volume_init.squeeze(0).unsqueeze(0))
         self.volume = torch.nn.Parameter(volume)
         self.log_volume_amplitude = torch.nn.Parameter(log_volume_amplitude)
-
-        self.volume_mask = volume_mask
 
     def _get_mean_representation(self, volume: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Separate volume into normalized tensor and its log amplitude.
@@ -204,7 +228,8 @@ class Mean(VolumeBase):
         Returns:
             Volume tensor in spatial domain with amplitude applied
         """
-        return self.volume * torch.exp(self.log_volume_amplitude)
+        vol_repr = self.volume * torch.exp(self.log_volume_amplitude)
+        return vol_repr * self.volume_mask if self.volume_mask is not None else vol_repr
 
     def forward(self, dummy_var: Optional[Any] = None) -> torch.Tensor:
         """Forward pass returning volume in appropriate domain.
@@ -216,63 +241,6 @@ class Mean(VolumeBase):
             Volume tensor in current domain (spatial or Fourier)
         """
         return self.get_volume_spatial_domain() if self._in_spatial_domain else self.get_volume_fourier_domain()
-
-    def get_volume_mask(self) -> Optional[torch.Tensor]:
-        """Get volume mask in appropriate domain.
-
-        Returns:
-            Volume mask tensor in current domain, or None if no mask
-        """
-        if self.volume_mask is None:
-            return None
-        if not self._in_spatial_domain:
-            return centered_fft3(
-                self.volume_mask / self.grid_correction if self.grid_correction is not None else self.volume_mask,
-                padding_size=(self.resolution * self.upsampling_factor,) * 3,
-            )
-        else:
-            return self.volume_mask
-
-    def to(self, *args: Any, **kwargs: Any) -> "Mean":
-        """Move module to device and update volume mask.
-
-        Args:
-            *args: Positional arguments for torch.nn.Module.to()
-            **kwargs: Keyword arguments for torch.nn.Module.to()
-
-        Returns:
-            Self for method chaining
-        """
-        super().to(*args, **kwargs)
-        self.volume_mask = self.volume_mask.to(*args, **kwargs) if self.volume_mask is not None else None
-
-        return self
-
-    def state_dict(self, *args: Any, **kwargs: Any) -> dict:
-        """Get state dictionary including volume mask.
-
-        Args:
-            *args: Positional arguments for super().state_dict()
-            **kwargs: Keyword arguments for super().state_dict()
-
-        Returns:
-            State dictionary with volume mask information
-        """
-        state_dict = super().state_dict(*args, **kwargs)
-        state_dict.update({"volume_mask": self.volume_mask.to("cpu") if self.volume_mask is not None else None})
-        return state_dict
-
-    def load_state_dict(self, state_dict: dict, *args: Any, **kwargs: Any) -> None:
-        """Load state dictionary including volume mask.
-
-        Args:
-            state_dict: State dictionary to load
-            *args: Positional arguments for super().load_state_dict()
-            **kwargs: Keyword arguments for super().load_state_dict()
-        """
-        self.volume_mask = state_dict.pop("volume_mask")
-        super().load_state_dict(state_dict, *args, **kwargs)
-        return
 
 
 class Covar(VolumeBase):
@@ -296,6 +264,7 @@ class Covar(VolumeBase):
         fourier_domain: bool = False,
         upsampling_factor: int = 2,
         vectors: Optional[torch.Tensor] = None,
+        volume_mask: Optional[torch.Tensor] = None,
     ) -> None:
         """Initialize Covar with low-rank factorization.
 
@@ -307,9 +276,14 @@ class Covar(VolumeBase):
             fourier_domain: Whether to start in Fourier domain
             upsampling_factor: Factor for Fourier domain upsampling
             vectors: Optional initial vectors (if None, random initialization)
+            volume_mask: Optional volume mask for masking
         """
         super().__init__(
-            resolution=resolution, dtype=dtype, fourier_domain=fourier_domain, upsampling_factor=upsampling_factor
+            resolution=resolution,
+            dtype=dtype,
+            fourier_domain=fourier_domain,
+            upsampling_factor=upsampling_factor,
+            volume_mask=volume_mask,
         )
         self.rank = rank
         self.pixel_var_estimate = pixel_var_estimate
@@ -384,7 +358,10 @@ class Covar(VolumeBase):
         Returns:
             Random vector tensor
         """
-        return (torch.randn((num_vectors,) + (self.resolution,) * 3, dtype=self.dtype)) * (self.pixel_var_estimate**0.5)
+        random_vectors = (torch.randn((num_vectors,) + (self.resolution,) * 3, dtype=self.dtype)) * (
+            self.pixel_var_estimate**0.5
+        )
+        return random_vectors * self.volume_mask if self.volume_mask is not None else random_vectors
 
     def init_random_vectors_from_psd(self, num_vectors: int, psd: torch.Tensor) -> torch.Tensor:
         """Initialize random vectors from power spectral density.
@@ -446,7 +423,8 @@ class Covar(VolumeBase):
         return centered_fft3(vectors, padding_size=(self.resolution * self.upsampling_factor,) * 3)
 
     def get_vectors_spatial_domain(self):
-        return self.vectors * torch.exp(self.log_sqrt_eigenvals).reshape(-1, 1, 1, 1)
+        vectors = self.vectors * torch.exp(self.log_sqrt_eigenvals).reshape(-1, 1, 1, 1)
+        return vectors * self.volume_mask if self.volume_mask is not None else vectors
 
     def orthogonal_projection(self):
         with torch.no_grad():

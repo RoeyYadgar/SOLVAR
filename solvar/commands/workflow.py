@@ -22,9 +22,10 @@ from solvar.poses import (
     pose_ASPIRE2cryoDRGN,
     pose_cryoDRGN2APIRE,
 )
+from solvar.projection_funcs import centered_fft3, centered_ifft3
 from solvar.reconstruct_utils import relionReconstruct
 from solvar.source import ImageSource
-from solvar.utils import cosineSimilarity, get_torch_device, readVols, volsCovarEigenvec
+from solvar.utils import cosineSimilarity, get_torch_device, readVols, soft_edged_kernel, volsCovarEigenvec
 from solvar.wiener_coords import latentMAP
 
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ def normalizeRelionVolume(vol: Any, source: Any, batch_size: int = 512) -> float
     return scale_const
 
 
-def load_mask(mask: Union[str, Any], L: int) -> aspire.volume.Volume:
+def load_mask(mask: Union[str, Any], L: int, use_softening_kernel: bool = False) -> aspire.volume.Volume:
     """Load and prepare mask volume.
 
     Args:
@@ -145,6 +146,15 @@ def load_mask(mask: Union[str, Any], L: int) -> aspire.volume.Volume:
         if np.abs(min_mask_val) > 1e-3 or np.abs(max_mask_val - 1) > 1e-3:
             logger.warning(f"mask volume range is [{min_mask_val},{max_mask_val}]. Normalzing mask")
             mask = (mask - min_mask_val) / (max_mask_val - min_mask_val)
+
+    if use_softening_kernel:
+        mask = torch.tensor(mask.asnumpy())
+        mask = aspire.volume.Volume(
+            centered_ifft3(
+                centered_fft3(mask) * soft_edged_kernel(radius=5, L=L, dim=3, in_fourier=True).to(mask.dtype)
+            ).real.numpy(),
+            pixel_size=mask.pixel_size,
+        )
 
     return mask
 
@@ -471,7 +481,8 @@ def covar_processing(
             pose.get_offsets().cpu().numpy(),
             L,
         )
-        with open(path.join(output_dir, "refined_poses.pkl"), "wb") as fid:
+        refined_poses_path = path.join(output_dir, "refined_poses.pkl")
+        with open(refined_poses_path, "wb") as fid:
             pickle.dump(refined_pose, fid)
         if pose.use_contrast:
             with open(path.join(output_dir, "contrast.pkl"), "wb") as fid:
@@ -511,6 +522,9 @@ def covar_processing(
         "data_sign_inverted": dataset.data_inverted,
         "lazy": is_dataset_lazy(dataset),
     }
+    if optimize_pose:
+        data_dict["refined_poses_path"] = get_abspath(refined_poses_path)
+
     if is_gt_eigenvols:
         data_dict = {
             **data_dict,
