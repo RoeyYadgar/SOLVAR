@@ -269,18 +269,20 @@ def get_mask_threshold(mask: torch.Tensor, nufft_plan: BaseNufftPlan) -> float:
     )  # filter values which aren't too close to 0 and take a threhosld that captures 90% of the projected mask
 
 
-def lowpass_volume(volume: torch.Tensor, cutoff: float, lowpass_shape: str = "rect") -> torch.Tensor:
+def lowpass_volume(
+    volume: torch.Tensor, cutoff: float, lowpass_shape: str = "rect", in_fourier: bool = False
+) -> torch.Tensor:
     """Apply low-pass filter to volume.
 
     Args:
         volume: Input volume
         cutoff: Cutoff frequency
         lowpass_shape: Shape of filter ("rect" or "sphere") (default: "rect")
-
+        in_fourier: Whether the input/output are in Fourier domain (default: False)
     Returns:
         Low-pass filtered volume
     """
-    fourier_vol = centered_fft3(volume)
+    fourier_vol = centered_fft3(volume) if not in_fourier else volume
     L = volume.shape[-1]
     if lowpass_shape == "rect":
         fourier_mask = torch.arange(-L // 2, L // 2) if L % 2 == 0 else torch.arange(-L // 2, L // 2) + 1
@@ -291,7 +293,7 @@ def lowpass_volume(volume: torch.Tensor, cutoff: float, lowpass_shape: str = "re
         fourier_mask = torch.abs(fourier_mask) < cutoff
 
     fourier_vol *= fourier_mask.unsqueeze(0)
-    return centered_ifft3(fourier_vol).real
+    return centered_ifft3(fourier_vol).real if not in_fourier else fourier_vol
 
 
 def highpass_volume(volume: torch.Tensor, cutoff: float, highpass_shape: str = "rect") -> torch.Tensor:

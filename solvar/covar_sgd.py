@@ -32,13 +32,12 @@ from solvar.projection_funcs import (
     centered_fft3,
     centered_ifft2,
     crop_image,
-    get_mask_threshold,
     highpass_volume,
     lowpass_volume,
     preprocess_image_batch,
     vol_forward,
 )
-from solvar.utils import cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs, soft_edged_kernel
+from solvar.utils import cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs
 from solvar.wiener_coords import compute_latentMAP_batch
 
 logger = logging.getLogger(__name__)
@@ -699,11 +698,9 @@ class CovarPoseTrainer(CovarTrainer):
         for batch in tqdm(self.train_data, desc="Correcting offsets"):
             images, idx, filters = self.prepare_batch(batch)
 
-            softening_kernel_fourier = self.softening_kernel_fourier
             if self.downsample_size != self.pose.resolution:
                 images = crop_image(images, self.downsample_size)
                 filters = crop_image(filters, self.downsample_size)
-                softening_kernel_fourier = crop_image(softening_kernel_fourier, self.downsample_size)
 
             self.nufft_plans.setpts(self.pose(idx, ds_resolution=self.downsample_size)[0].detach())
             mean_forward = (
@@ -831,11 +828,9 @@ class CovarPoseTrainer(CovarTrainer):
             else:
                 pts_rot, phase_shift = self.pose(idx, ds_resolution=downsample_size)
 
-            softening_kernel_fourier = self.softening_kernel_fourier
             if downsample_size != self.pose.resolution:
                 images = crop_image(images, downsample_size)
                 filters = crop_image(filters, downsample_size)
-                softening_kernel_fourier = crop_image(softening_kernel_fourier, downsample_size)
 
             preprocessed_images = preprocess_image_batch(
                 images,
@@ -846,8 +841,13 @@ class CovarPoseTrainer(CovarTrainer):
                 fourier_domain=self.optimize_in_fourier_domain,
             )
 
+            covar_eigenvecs = self._covar(dummy_var=None)
+            lowpassed_covar_eigenvecs = lowpass_volume(
+                covar_eigenvecs, self.downsample_size // 2, in_fourier=self.optimize_in_fourier_domain
+            )
+
             cost_val = self.cost_func(
-                self._covar(dummy_var=None),
+                lowpassed_covar_eigenvecs,
                 preprocessed_images,
                 self.nufft_plans,
                 filters,
@@ -865,10 +865,6 @@ class CovarPoseTrainer(CovarTrainer):
 
         if self.use_orthogonal_projection:
             self.covar.orthogonal_projection()
-
-        with torch.no_grad():
-            lowpassed_vecs = lowpass_volume(self.covar.vectors.data, self.downsample_size // 2)
-            self.covar.vectors.data.copy_(lowpassed_vecs)
 
         self._updated_idx[idx] = 1
 
@@ -925,23 +921,11 @@ class CovarPoseTrainer(CovarTrainer):
         """
         super().setup_training(**kwargs)
         self.get_mean_module().init_grid_correction(kwargs.get("nufft_disc"))
-        self.mask = self.get_mean_module().get_volume_mask()
         self.raw_cost_func = (
             raw_cost_fourier_domain
             if kwargs.get("objective_func") == "ls"
             else raw_cost_maximum_liklihood_fourier_domain
         )
-
-        self.softening_kernel_fourier = (
-            soft_edged_kernel(radius=5, L=self.get_mean_module().resolution, dim=2, in_fourier=True)
-            .to(self.device)
-            .to(self.mask.dtype)
-        )
-
-        with torch.no_grad():
-            idx = torch.arange(self.batch_size, device=self.device)
-            self.nufft_plans.setpts(self.pose(idx)[0])
-            self.mask_threshold = get_mask_threshold(self.mask, self.nufft_plans)
 
     def complete_training(self) -> None:
         """Complete training and cleanup for pose optimization.

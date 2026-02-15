@@ -709,9 +709,6 @@ class LazyCovarDataset(CovarDataset):
                 filters,
                 (pts_rot, phase_shift),
                 self._mean_volume,
-                self._mask,
-                self._mask_threshold,
-                self._softening_kernel_fourier,
                 fourier_domain=not self._in_spatial_domain,
             )
 

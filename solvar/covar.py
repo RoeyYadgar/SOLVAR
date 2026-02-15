@@ -361,7 +361,7 @@ class Covar(VolumeBase):
         random_vectors = (torch.randn((num_vectors,) + (self.resolution,) * 3, dtype=self.dtype)) * (
             self.pixel_var_estimate**0.5
         )
-        return random_vectors * self.volume_mask if self.volume_mask is not None else random_vectors
+        return random_vectors * self.volume_mask.cpu() if self.volume_mask is not None else random_vectors
 
     def init_random_vectors_from_psd(self, num_vectors: int, psd: torch.Tensor) -> torch.Tensor:
         """Initialize random vectors from power spectral density.
@@ -375,7 +375,9 @@ class Covar(VolumeBase):
         """
         if psd.ndim == 1:  # If psd input is radial
             psd = expand_fourier_shell(psd, self.resolution, 3)
-        vectors = torch.randn((num_vectors,) + (self.resolution,) * 3, dtype=self.dtype)
+        vectors = torch.randn((num_vectors,) + (self.resolution,) * 3, dtype=self.dtype, device=self.device)
+        if self.volume_mask is not None:
+            vectors *= self.volume_mask.cpu()
         vectors_fourier = centered_fft3(vectors) / (self.resolution**1.5)
         vectors_fourier *= torch.sqrt(psd)
         vectors = centered_ifft3(vectors_fourier).real

@@ -148,12 +148,13 @@ def load_mask(mask: Union[str, Any], L: int, use_softening_kernel: bool = False)
             mask = (mask - min_mask_val) / (max_mask_val - min_mask_val)
 
     if use_softening_kernel:
+        mask_pixel_size = mask.pixel_size
         mask = torch.tensor(mask.asnumpy())
         mask = aspire.volume.Volume(
             centered_ifft3(
                 centered_fft3(mask) * soft_edged_kernel(radius=5, L=L, dim=3, in_fourier=True).to(mask.dtype)
             ).real.numpy(),
-            pixel_size=mask.pixel_size,
+            pixel_size=mask_pixel_size,
         )
 
     return mask
@@ -417,6 +418,7 @@ def covar_processing(
         pixel_var_estimate=dataset.estimate_signal_var(),
         fourier_domain=optimize_in_fourier_domain,
         upsampling_factor=upsampling_factor,
+        volume_mask=torch.tensor(mask.asnumpy()),
     )
     if optimize_pose:
         mean = Mean(
