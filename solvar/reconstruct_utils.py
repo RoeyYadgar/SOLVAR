@@ -20,6 +20,7 @@ def relionReconstruct(
     overwrite: bool = True,
     mrcs_index: Optional[Any] = None,
     invert: bool = False,
+    use_mpi: bool = True,
 ) -> Any:
     """Reconstruct volume using RELION.
 
@@ -30,7 +31,7 @@ def relionReconstruct(
         overwrite: Whether to overwrite existing output (default: True)
         mrcs_index: Indices for subset (optional)
         invert: Whether to invert volume (default: False)
-
+        use_mpi: Whether to use MPI (default: True)
     Returns:
         Reconstructed volume
     """
@@ -43,7 +44,7 @@ def relionReconstruct(
     outputfile_abs = os.path.abspath(outputfile)
     if overwrite or (not os.path.isfile(outputfile)):
         relion_command = f"relion_reconstruct --i {inputfile_name} --o {outputfile_abs} --ctf" + classnum_arg
-        num_cores = get_mpi_cpu_count()
+        num_cores = get_mpi_cpu_count() if use_mpi else 1
         if num_cores > 1:
             relion_command = (
                 f'mpirun -np {num_cores} {relion_command.replace("relion_reconstruct","relion_reconstruct_mpi")}'
