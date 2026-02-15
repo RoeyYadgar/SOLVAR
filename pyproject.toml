@@ -35,7 +35,9 @@ dev = [
     "comet_ml==3.48.1",
     "pre-commit",
     "twine",
-    "build"
+    "build",
+    "snakemake",
+    "snakemake-executor-plugin-slurm"
 ]
 
 [project.scripts]
