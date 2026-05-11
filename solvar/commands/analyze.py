@@ -20,12 +20,11 @@ from solvar.trajectory import compute_density, compute_trajectory, find_closet_i
 
 logger = logging.getLogger(__name__)
 
-
 RECONSTRUCT_METHODS = {
     "recovar": recovarReconstructFromEmbedding,
     "relion": reconstruct_utils.relionReconstructFromEmbedding,
     "reprojection": reconstruct_utils.reprojectVolumeFromEmbedding,
-    "relion_disjoint": reconstruct_utils.relionReconstructFromEmbeddingDisjointSets,
+    "Relion_disjoint": reconstruct_utils.relionReconstructFromEmbeddingDisjointSets,
 }
 
 
@@ -281,6 +280,7 @@ def plot_volume_projections(volumes: np.ndarray) -> plt.Figure:
 @click.option(
     "--skip-coor-analysis", is_flag=True, help="whether to skip coordinate analysis (kmeans clustering & umap)"
 )
+@click.option("--skip-umap", is_flag=True, help="whether to skip UMAP embedding and UMAP figures")
 @click.option("--num-trajectories", type=int, default=0, help="Number of trajectories to compute (default 0)")
 @click.option(
     "--gt-labels",
@@ -317,6 +317,7 @@ def analyze(
     reconstruct_method: str = "recovar",
     skip_reconstruction: bool = False,
     skip_coor_analysis: bool = False,
+    skip_umap: bool = False,
     num_trajectories: int = 0,
     gt_labels: Optional[Union[str, np.ndarray]] = None,
     override_particles: Optional[Tuple[str, str, str]] = None,
@@ -332,6 +333,7 @@ def analyze(
         reconstruct_method: Method for volume reconstruction ("recovar", "relion", etc.)
         skip_reconstruction: Whether to skip volume reconstruction
         skip_coor_analysis: Whether to skip coordinate analysis (k-means & UMAP)
+        skip_umap: Whether to skip UMAP embedding and UMAP-based figures
         num_trajectories: Number of trajectories to compute
         gt_labels: Path to pickle file or array of ground truth labels for coloring
         override_particles: Path to particles, ctf and poses to be used for reconstruction instead of original data.
@@ -396,7 +398,10 @@ def analyze(
     ):
         if not skip_coor_analysis:
             analysis_data, figures, umap_reducer = analyze_coordinates(
-                data[coords_key], num_clusters if latent_coords is None else latent_coords, gt_labels
+                data[coords_key],
+                num_clusters if latent_coords is None else latent_coords,
+                gt_labels,
+                skip_umap=skip_umap,
             )
             figures["eigenvol_projections"] = plot_volume_projections(data.get(eigenvols_key))
             fig_path = save_analysis_result(
@@ -421,11 +426,10 @@ def analyze(
             for i, traj in enumerate(trajectories):
                 # Save trajectory figures
                 traj_dir = os.path.join(output_dir, analysis_dir, f"trajectory_{i+1}")
-                umap_trajectory = umap_reducer.transform(traj)
-                figures = {
-                    **create_umap_figure(analysis_data["umap_coords"], umap_trajectory, gt_labels),
-                    **create_pc_figure(coords, traj, gt_labels),
-                }
+                figures = create_pc_figure(coords, traj, gt_labels)
+                if umap_reducer is not None and analysis_data["umap_coords"] is not None:
+                    umap_trajectory = umap_reducer.transform(traj)
+                    figures.update(create_umap_figure(analysis_data["umap_coords"], umap_trajectory, gt_labels))
                 save_analysis_result(traj_dir, figures=figures)
                 with open(os.path.join(traj_dir, "trajectory.pkl"), "wb") as f:
                     pickle.dump(traj, f)
@@ -455,8 +459,8 @@ def analyze(
 
 
 def analyze_coordinates(
-    coords: np.ndarray, num_clusters: Union[int, np.ndarray], gt_labels: Optional[np.ndarray]
-) -> Tuple[Dict[str, Any], Dict[str, plt.Figure], UMAP]:
+    coords: np.ndarray, num_clusters: Union[int, np.ndarray], gt_labels: Optional[np.ndarray], skip_umap: bool = False
+) -> Tuple[Dict[str, Any], Dict[str, plt.Figure], Optional[UMAP]]:
     """Analyze coordinates using UMAP and k-means clustering.
 
     Args:
@@ -467,25 +471,31 @@ def analyze_coordinates(
     Returns:
         Tuple containing (data_dict, figures_dict, umap_reducer)
     """
-    reducer = UMAP(n_components=2)
-    umap_coords = reducer.fit_transform(coords)
+    reducer = None
+    umap_coords = None
+    if not skip_umap:
+        logger.debug("Computing UMAP embedding of latent space")
+        reducer = UMAP(n_components=2, low_memory=True)
+        umap_coords = reducer.fit_transform(coords)
+        logger.debug("UMAP finished")
 
     if isinstance(num_clusters, np.ndarray):  # If num_clusters is already the cluster_coords
+        logger.debug(f"Using provided {num_clusters.shape[0]} cluster centers")
         cluster_coords = num_clusters
-        umap_cluster_coords = reducer.transform(cluster_coords)
+        umap_cluster_coords = reducer.transform(cluster_coords) if reducer is not None else None
     elif num_clusters != 0:
+        logger.debug("Running KMeans on latent space")
         kmeans = KMeans(n_clusters=num_clusters)
         kmeans.fit(coords)
         cluster_coords = kmeans.cluster_centers_
-        umap_cluster_coords = reducer.transform(cluster_coords)
+        umap_cluster_coords = reducer.transform(cluster_coords) if reducer is not None else None
     else:
         cluster_coords = None
         umap_cluster_coords = None
 
-    figures = {
-        **create_umap_figure(umap_coords, umap_cluster_coords, gt_labels),
-        **create_pc_figure(coords, cluster_coords, gt_labels),
-    }
+    figures = create_pc_figure(coords, cluster_coords, gt_labels)
+    if umap_coords is not None:
+        figures.update(create_umap_figure(umap_coords, umap_cluster_coords, gt_labels))
 
     data = {
         "coords": coords,

@@ -57,13 +57,13 @@ class AnalyzeViewer:
         self.data = data
         self.dir = dir
         self.coords = data["coords"]
-        self.umap_coords = data["umap_coords"]
+        self.umap_coords = data.get("umap_coords")
         self.cluster_coords = data.get("cluster_coords", None)
         self.umap_cluster_coords = data.get("umap_cluster_coords", None)
         self.selected_cluster_coords = []
         self.figures = {}
         self.color_by = tk.StringVar(value="None")
-        self.figure_type = tk.StringVar(value="umap")
+        self.figure_type = tk.StringVar(value="umap" if self.umap_coords is not None else "pc_0_1")
         self.mode = tk.StringVar(value="select")  # "select" or "polygon"
         self.polygon_vertices: List[List[float]] = []  # Store polygon vertices
         self.polygon_patch: Optional[PolygonPatch] = None  # Current polygon patch being drawn
@@ -106,7 +106,7 @@ class AnalyzeViewer:
         self.dir = os.path.split(path)[0]
         self.data = data
         self.coords = data["coords"]
-        self.umap_coords = data["umap_coords"]
+        self.umap_coords = data.get("umap_coords")
         self.cluster_coords = data.get("cluster_coords", None)
         self.umap_cluster_coords = data.get("umap_cluster_coords", None)
         self.selected_cluster_coords = []
@@ -144,7 +144,9 @@ class AnalyzeViewer:
         control_frame.pack(side=tk.TOP, fill=tk.X)
 
         # Dropdown for figure type
-        figure_types = ["umap"]
+        figure_types = []
+        if self.umap_coords is not None:
+            figure_types.append("umap")
         pc_dim = self.coords.shape[1]
         for i in range(min(5, pc_dim)):
             for j in range(i + 1, min(5, pc_dim)):
@@ -427,18 +429,22 @@ class AnalyzeViewer:
         idx = np.argmin(dists)
 
         # Save state for undo
-        if self.umap_cluster_coords is not None:
-            self.selected_indices_history.append([len(self.umap_cluster_coords)])
+        if self.cluster_coords is not None:
+            self.selected_indices_history.append([len(self.cluster_coords)])
         else:
             self.selected_indices_history.append([0])
 
-        # vstack to umap_cluster_coords or cluster_coords
-        if self.umap_cluster_coords is None:
-            self.umap_cluster_coords = np.array([self.umap_coords[idx]])
+        # Add selected point to cluster coordinates, and to UMAP coordinates if available
+        if self.cluster_coords is None:
             self.cluster_coords = np.array([self.coords[idx]])
         else:
-            self.umap_cluster_coords = np.vstack([self.umap_cluster_coords, self.umap_coords[idx][None, :]])
             self.cluster_coords = np.vstack([self.cluster_coords, self.coords[idx][None, :]])
+
+        if self.umap_coords is not None:
+            if self.umap_cluster_coords is None:
+                self.umap_cluster_coords = np.array([self.umap_coords[idx]])
+            else:
+                self.umap_cluster_coords = np.vstack([self.umap_cluster_coords, self.umap_coords[idx][None, :]])
 
         self._draw_figure()
 
@@ -510,7 +516,7 @@ class AnalyzeViewer:
 
     def _undo_last_selection(self) -> None:
         """Undo the last selection action."""
-        if not self.selected_indices_history or self.umap_cluster_coords is None:
+        if not self.selected_indices_history or self.cluster_coords is None:
             return
 
         # Get indices to remove from last action
@@ -519,19 +525,20 @@ class AnalyzeViewer:
             return
 
         # Remove those indices (they should be the last ones added)
-        if len(indices_to_remove) == len(self.umap_cluster_coords):
+        if len(indices_to_remove) == len(self.cluster_coords):
             # All points were added in last action
-            self.umap_cluster_coords = None
             self.cluster_coords = None
+            self.umap_cluster_coords = None
         else:
             # Remove only the last added points
-            keep_indices = [i for i in range(len(self.umap_cluster_coords)) if i not in indices_to_remove]
+            keep_indices = [i for i in range(len(self.cluster_coords)) if i not in indices_to_remove]
             if keep_indices:
-                self.umap_cluster_coords = self.umap_cluster_coords[keep_indices]
                 self.cluster_coords = self.cluster_coords[keep_indices]
+                if self.umap_cluster_coords is not None:
+                    self.umap_cluster_coords = self.umap_cluster_coords[keep_indices]
             else:
-                self.umap_cluster_coords = None
                 self.cluster_coords = None
+                self.umap_cluster_coords = None
 
         self._draw_figure()
 
@@ -659,20 +666,23 @@ class AnalyzeViewer:
             with open(path, "rb") as f:
                 self.cluster_coords = pickle.load(f)
 
-            self.umap_cluster_coords = np.zeros((len(self.cluster_coords), self.umap_coords.shape[1]))
-            for i, cluster_center in enumerate(self.cluster_coords):
-                matches = np.where(np.all(self.coords == cluster_center, axis=1))[0]
-                if len(matches) > 0:
-                    idx = matches[0]
-                else:
-                    print(
-                        "Loaded latent coords do not match exact points from "
-                        "existing latent points. Displaying closest points instead"
-                    )
-                    # Find the closest coordinate
-                    dists = np.linalg.norm(self.coords - cluster_center, axis=1)
-                    idx = np.argmin(dists)
-                self.umap_cluster_coords[i] = self.umap_coords[idx]
+            if self.umap_coords is not None:
+                self.umap_cluster_coords = np.zeros((len(self.cluster_coords), self.umap_coords.shape[1]))
+                for i, cluster_center in enumerate(self.cluster_coords):
+                    matches = np.where(np.all(self.coords == cluster_center, axis=1))[0]
+                    if len(matches) > 0:
+                        idx = matches[0]
+                    else:
+                        print(
+                            "Loaded latent coords do not match exact points from "
+                            "existing latent points. Displaying closest points instead"
+                        )
+                        # Find the closest coordinate
+                        dists = np.linalg.norm(self.coords - cluster_center, axis=1)
+                        idx = np.argmin(dists)
+                    self.umap_cluster_coords[i] = self.umap_coords[idx]
+            else:
+                self.umap_cluster_coords = None
             self._draw_figure()
 
     def _on_close(self) -> None:
@@ -771,6 +781,9 @@ def analysis_viewer_cli(path: Optional[str], max_points: Optional[int], format: 
         data = read_cryodrgn_format(file_path)
     else:
         raise ValueError(f"Unknown format: {format}")
+
+    if "umap_coords" not in data:
+        data["umap_coords"] = None
 
     AnalyzeViewer(root, data, dir=os.path.split(file_path)[0], max_points=max_points)
     root.protocol("WM_DELETE_WINDOW", root.quit)

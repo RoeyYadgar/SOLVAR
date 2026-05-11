@@ -317,6 +317,9 @@ def covar_workflow(
             if gt_pose is not None:
                 gt_pose = pickle.load(open(gt_pose, "rb"))
                 gt_rots, gt_offsets = pose_cryoDRGN2APIRE(gt_pose, L)
+                if ind is not None:
+                    gt_rots = gt_rots[ind]
+                    gt_offsets = gt_offsets[ind]
             else:
                 gt_rots = None
                 gt_offsets = None
