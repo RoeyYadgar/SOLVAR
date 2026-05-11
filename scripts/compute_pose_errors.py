@@ -19,11 +19,12 @@ import sys
 import tempfile
 from typing import Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
 # Import error computation functions from the existing codebase
-from solvar.poses import in_plane_rot_error, offset_mean_error, out_of_plane_rot_error
+from solvar.poses import in_plane_rot_error, offset_mean_error, out_of_plane_rot_error, pose_cryoDRGN2APIRE
 
 
 def load_cryodrgn_poses(poses_file: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -87,8 +88,8 @@ def compute_pose_errors(poses1_file: str, poses2_file: str, global_align: bool =
     """
     # Load both pose files
     print("Loading pose files...")
-    rots1, offsets1 = load_cryodrgn_poses(poses1_file)
-    rots2, offsets2 = load_cryodrgn_poses(poses2_file)
+    rots1, offsets1 = pose_cryoDRGN2APIRE(load_cryodrgn_poses(poses1_file), image_size)
+    rots2, offsets2 = pose_cryoDRGN2APIRE(load_cryodrgn_poses(poses2_file), image_size)
 
     # Check that both files have the same number of poses
     if len(rots1) != len(rots2):
@@ -151,6 +152,87 @@ def compute_pose_errors(poses1_file: str, poses2_file: str, global_align: bool =
     return results
 
 
+def plot_histograms(results: dict, output_path: str = "pose_errors_histogram.png") -> None:
+    """Generate histogram subplots of pose errors.
+
+    Args:
+        results: Dictionary containing error statistics from compute_pose_errors
+        output_path: Path to save the figure
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # In-plane rotation errors histogram
+    ax1 = axes[0]
+    in_plane_angles = results["in_plane_rotation"]["angles"]
+    ax1.hist(in_plane_angles, bins=50, edgecolor="black", alpha=0.7)
+    ax1.axvline(
+        results["in_plane_rotation"]["mean"],
+        color="red",
+        linestyle="--",
+        label=f"Mean: {results['in_plane_rotation']['mean']:.3f}°",
+    )
+    ax1.axvline(
+        results["in_plane_rotation"]["median"],
+        color="green",
+        linestyle="--",
+        label=f"Median: {results['in_plane_rotation']['median']:.3f}°",
+    )
+    ax1.set_xlabel("In-plane Rotation Error (degrees)")
+    ax1.set_ylabel("Frequency")
+    ax1.set_yscale("log")
+    ax1.set_title("In-plane Rotation Errors")
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+
+    # Out-of-plane rotation errors histogram
+    ax2 = axes[1]
+    out_of_plane_angles = results["out_of_plane_rotation"]["angles"]
+    ax2.hist(out_of_plane_angles, bins=50, edgecolor="black", alpha=0.7, color="orange")
+    ax2.axvline(
+        results["out_of_plane_rotation"]["mean"],
+        color="red",
+        linestyle="--",
+        label=f"Mean: {results['out_of_plane_rotation']['mean']:.3f}°",
+    )
+    ax2.axvline(
+        results["out_of_plane_rotation"]["median"],
+        color="green",
+        linestyle="--",
+        label=f"Median: {results['out_of_plane_rotation']['median']:.3f}°",
+    )
+    ax2.set_xlabel("Out-of-plane Rotation Error (degrees)")
+    ax2.set_ylabel("Frequency")
+    ax2.set_yscale("log")
+    ax2.set_title("Out-of-plane Rotation Errors")
+    ax2.legend()
+    ax2.grid(True, alpha=0.3)
+
+    # Offset errors histogram
+    ax3 = axes[2]
+    offset_errors = results["offset"]["errors"]
+    ax3.hist(offset_errors, bins=50, edgecolor="black", alpha=0.7, color="purple")
+    ax3.axvline(
+        results["offset"]["mean"], color="red", linestyle="--", label=f"Mean: {results['offset']['mean']:.3f} px"
+    )
+    ax3.axvline(
+        results["offset"]["median"],
+        color="green",
+        linestyle="--",
+        label=f"Median: {results['offset']['median']:.3f} px",
+    )
+    ax3.set_xlabel("Offset Error (pixels)")
+    ax3.set_ylabel("Frequency")
+    ax3.set_yscale("log")
+    ax3.set_title("Offset Errors")
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    print(f"\nHistogram figure saved to: {output_path}")
+    plt.close()
+
+
 def print_results(results: dict) -> None:
     """Print pose error results in a formatted way."""
     print("\n" + "=" * 60)
@@ -204,6 +286,12 @@ Examples:
         action="store_true",
         help="Whether to perform global alignment of rotations before computing errors",
     )
+    parser.add_argument(
+        "--plot-output",
+        type=str,
+        default=None,
+        help="If provided, save histogram figure of pose errors to this path",
+    )
 
     args = parser.parse_args()
 
@@ -220,6 +308,10 @@ Examples:
 
         # Print results
         print_results(results)
+
+        # Generate histogram figure if output path provided
+        if args.plot_output is not None:
+            plot_histograms(results, args.plot_output)
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

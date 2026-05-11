@@ -38,10 +38,14 @@ def load_analysis_data(filepath: str) -> Dict[str, Any]:
     except FileNotFoundError:
         raise FileNotFoundError(f"Analysis data file not found: {filepath}")
 
-    if "coords" not in data:
-        raise KeyError(f"'coords' key not found in analysis data: {filepath}")
+    if "coords" in data:
+        coords = data["coords"]
+    elif "coords_est" in data:
+        coords = data["coords_est"]
+    else:
+        raise KeyError(f"'coords' or 'coods_est' key not found in analysis data: {filepath}")
 
-    return data
+    return data, coords
 
 
 def load_query_coords(filepath: str) -> np.ndarray:
@@ -123,12 +127,10 @@ def match_coordinates(
         Dictionary containing matching results
     """
     print(f"Loading analysis data from: {analysis_data1_path}")
-    analysis_data1 = load_analysis_data(analysis_data1_path)
-    coords1 = analysis_data1["coords"]
+    _, coords1 = load_analysis_data(analysis_data1_path)
 
     print(f"Loading analysis data from: {analysis_data2_path}")
-    analysis_data2 = load_analysis_data(analysis_data2_path)
-    coords2 = analysis_data2["coords"]
+    _, coords2 = load_analysis_data(analysis_data2_path)
 
     print(f"Loading query coordinates from: {query_coords_path}")
     query_coords = load_query_coords(query_coords_path)
