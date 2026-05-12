@@ -18,6 +18,7 @@ from solvar.fsc_utils import (
     upsample_and_expand_fourier_shell,
     vol_fsc,
 )
+from solvar.logger import NullMetricsLogger, init_metrics_logger
 from solvar.mean import reconstruct_mean_from_halfsets, reconstruct_mean_from_halfsets_DDP
 from solvar.newton_opt import BlockwiseLBFGS
 from solvar.nufft_plan import NufftPlan, NufftPlanDiscretized
@@ -59,7 +60,6 @@ class CovarTrainer:
         logTraining: Whether to log training progress
         training_log_freq: Frequency of training logs
         gt_data: Ground truth data for evaluation
-        training_log: Dictionary storing training metrics
         num_reduced_lr_before_stop: Number of LR reductions before stopping
         scheduler_patiece: Patience for learning rate scheduler
         fourier_reg: Fourier domain regularization term
@@ -91,23 +91,17 @@ class CovarTrainer:
         self.training_log_freq = training_log_freq
         self.gt_data = gt_data
         if self.logTraining:
-            self.training_log = {"epoch_ind": [], "lr_history": [], "cost_val": [], "epoch_run_time": []}
-            if self.vectorsGT is not None:
-                self.training_log.update(
-                    {
-                        "cosine_sim": [],
-                        "fro_err": [],
-                        "fro_err_half_res": [],
-                        "fro_err_upper_half_res": [],
-                        "fro_err_quarter_res": [],
-                        "covar_fsc_mean": [],
-                        "captured_var": [],
-                    }
-                )
+            if self.save_path is not None:
+                self.metrics_logger = init_metrics_logger(os.path.join(os.path.dirname(self.save_path), "metrics.csv"))
+            else:
+                self.metrics_logger = NullMetricsLogger()
+            self._last_metrics: dict = {}
+            self._logging_step = 0
 
         self.num_reduced_lr_before_stop = 4
         self.scheduler_patiece = 0
         self.fourier_reg = None
+        self.epoch_index = 0
 
     @property
     def dataset(self) -> CovarDataset:
@@ -352,7 +346,6 @@ class CovarTrainer:
         # The sgd is performed on cost/batch_size + reg_term while its supposed to be sum(cost) + reg_term.
         # This ensures the regularization term scales in the appropriate manner
         self.reg_scale = reg / (len(self.dataset))
-        self.epoch_index = 0
 
     def restart_optimizer(self) -> None:
         """Restart the optimizer with current parameters.
@@ -388,8 +381,11 @@ class CovarTrainer:
             self.scheduler.step(self.cost_in_epoch)
             logger.debug(f"New learning rate set to {self.scheduler.get_last_lr()}")
 
+            if self.logTraining:
+                self.metrics_logger.log_metrics(
+                    {"epoch_run_time": epoch_end_time - epoch_start_time}, step=self._logging_step
+                )
             if self.logTraining and self.save_path is not None:
-                self.training_log["epoch_run_time"].append(epoch_end_time - epoch_start_time)
                 self.save_result()
 
             self.epoch_index += 1
@@ -437,59 +433,52 @@ class CovarTrainer:
 
         self.fourier_reg = fourier_reg
 
-    def log_training(self, num_epoch: int, batch_ind: int, cost_val: torch.Tensor) -> None:
-        """Log training metrics.
-
-        Args:
-            num_epoch: Current epoch number
-            batch_ind: Current batch index
-            cost_val: Current cost value
-        """
-        self.training_log["epoch_ind"].append(num_epoch + batch_ind / self.dataloader_len)
-        self.training_log["lr_history"].append(self.scheduler.get_last_lr()[0])
-        self.training_log["cost_val"].append(cost_val.detach().cpu().numpy())
-
+    def _build_metrics_dict(self, num_epoch: int, batch_ind: int, cost_val: torch.Tensor) -> dict:
+        metrics = {
+            "epoch_ind": num_epoch + batch_ind / self.dataloader_len,
+            "lr": self.scheduler.get_last_lr()[0],
+            "cost_val": float(cost_val.detach().cpu()),
+        }
         if self.vectorsGT is not None:
             with torch.no_grad():
                 L = self.covar.resolution
                 vectors = self.covar.get_vectors_spatial_domain()
                 vectorsGT = self.vectorsGT.to(self.device).reshape(self.vectorsGT.shape[0], L, L, L)
-                self.training_log["covar_fsc_mean"].append(
-                    (covar_fsc(vectorsGT, vectors)[: L // 2, : L // 2].mean().cpu().numpy())
-                )
-                self.training_log["fro_err"].append(
-                    (frobeniusNormDiff(vectorsGT, vectors) / frobeniusNorm(vectorsGT)).cpu().numpy()
-                )
+                metrics["covar_fsc_mean"] = float(covar_fsc(vectorsGT, vectors)[: L // 2, : L // 2].mean().cpu())
+                metrics["fro_err"] = float((frobeniusNormDiff(vectorsGT, vectors) / frobeniusNorm(vectorsGT)).cpu())
 
                 vectors_lowpass = lowpass_volume(vectors, L // 4)
                 vectors_GT_lowpass = lowpass_volume(vectorsGT, L // 4)
-                self.training_log["fro_err_half_res"].append(
-                    (frobeniusNormDiff(vectors_GT_lowpass, vectors_lowpass) / frobeniusNorm(vectors_GT_lowpass))
-                    .cpu()
-                    .numpy()
+                metrics["fro_err_half_res"] = float(
+                    (frobeniusNormDiff(vectors_GT_lowpass, vectors_lowpass) / frobeniusNorm(vectors_GT_lowpass)).cpu()
                 )
 
                 vectors_highpass = highpass_volume(vectors, L // 4)
                 vectors_GT_highpass = highpass_volume(vectorsGT, L // 4)
-                self.training_log["fro_err_upper_half_res"].append(
-                    (frobeniusNormDiff(vectors_GT_highpass, vectors_highpass) / frobeniusNorm(vectors_GT_highpass))
-                    .cpu()
-                    .numpy()
+                metrics["fro_err_upper_half_res"] = float(
+                    (
+                        frobeniusNormDiff(vectors_GT_highpass, vectors_highpass) / frobeniusNorm(vectors_GT_highpass)
+                    ).cpu()
                 )
 
                 vectors_lowpass = lowpass_volume(vectors, L // 8)
                 vectors_GT_lowpass = lowpass_volume(vectorsGT, L // 8)
-                self.training_log["fro_err_quarter_res"].append(
-                    (frobeniusNormDiff(vectors_GT_lowpass, vectors_lowpass) / frobeniusNorm(vectors_GT_lowpass))
-                    .cpu()
-                    .numpy()
+                metrics["fro_err_quarter_res"] = float(
+                    (frobeniusNormDiff(vectors_GT_lowpass, vectors_lowpass) / frobeniusNorm(vectors_GT_lowpass)).cpu()
                 )
 
-                vectors = vectors.reshape((vectors.shape[0], -1))
-                vectorsGT = vectorsGT.reshape((vectorsGT.shape[0], -1))
-                self.training_log["cosine_sim"].append(cosineSimilarity(vectors.detach(), vectorsGT))
+                vectors_flat = vectors.reshape((vectors.shape[0], -1))
+                vectorsGT_flat = vectorsGT.reshape((vectorsGT.shape[0], -1))
+                cosine_sim = cosineSimilarity(vectors_flat.detach(), vectorsGT_flat)
+                metrics["cosine_sim"] = float(np.mean(np.sqrt(np.sum(cosine_sim**2, axis=0))))
+                metrics["captured_var"] = float(capturedVariance(vectors_flat.detach(), vectorsGT_flat))
+        return metrics
 
-                self.training_log["captured_var"].append(capturedVariance(vectors.detach(), vectorsGT))
+    def log_training(self, num_epoch: int, batch_ind: int, cost_val: torch.Tensor) -> None:
+        metrics = self._build_metrics_dict(num_epoch, batch_ind, cost_val)
+        self._last_metrics = metrics
+        self.metrics_logger.log_metrics(metrics, self._logging_step)
+        self._logging_step += 1
 
     def _get_pbar_desc(self, epoch: int) -> str:
         """Get progress bar description.
@@ -504,14 +493,12 @@ class CovarTrainer:
         pbar_description += f" , vecs norm : {torch.norm(self.covar.get_vectors())}"
         if self.vectorsGT is not None:
             # TODO : update log metrics, use principal angles
-            cosine_sim_val = np.mean(np.sqrt(np.sum(self.training_log["cosine_sim"][-1] ** 2, axis=0)))
-            fro_err_val = self.training_log["fro_err"][-1]
             pbar_description = (
                 pbar_description
-                + ",  cosine sim : {:.2f}".format(cosine_sim_val)
-                + ", frobenium norm error : {:.2e}".format(fro_err_val)
-                + ", covar fsc mean : {:.3f}".format(self.training_log["covar_fsc_mean"][-1])
-                + ", captured variance : {:.3f}".format(self.training_log["captured_var"][-1])
+                + ",  cosine sim : {:.2f}".format(self._last_metrics["cosine_sim"])
+                + ", frobenium norm error : {:.2e}".format(self._last_metrics["fro_err"])
+                + ", covar fsc mean : {:.3f}".format(self._last_metrics["covar_fsc_mean"])
+                + ", captured variance : {:.3f}".format(self._last_metrics["captured_var"])
             )
         return pbar_description
 
@@ -524,8 +511,6 @@ class CovarTrainer:
         ckp = self.covar.state_dict()
         ckp["vectorsGT"] = self.vectorsGT
         ckp["fourier_reg"] = self.fourier_reg
-        ckp.update(self.training_log)
-
         return ckp
 
     def save_result(self) -> None:
@@ -577,16 +562,6 @@ class CovarPoseTrainer(CovarTrainer):
         self.num_rep = 1
         self.set_pose_grad_req(True)
         self._updated_idx = torch.zeros(len(self.dataset), device=self.device)
-
-        if self.logTraining and self.gt_data is not None:
-            if self.gt_data.rotations is not None:
-                self.training_log.update({"rot_angle_dist": [], "in_plane_rot_angle_dist": []})
-            if self.gt_data.offsets is not None:
-                self.training_log.update({"offsets_mean_dist": []})
-            if self.gt_data.contrasts is not None and self.get_pose_module().use_contrast:
-                self.training_log.update({"contrast_mean_dist": [], "contrast_corr": []})
-            if self.gt_data.mean is not None:
-                self.training_log.update({"mean_vol_norm_err": [], "mean_vol_fsc": []})
 
         self.mean_fourier_reg = None
         self.scheduler_patiece = 3
@@ -1004,17 +979,10 @@ class CovarPoseTrainer(CovarTrainer):
         else:
             raise Exception("Mean regularization not implemented for this objective function")
 
-    def log_training(self, num_epoch: int, batch_ind: int, cost_val: torch.Tensor) -> None:
-        """Log training metrics including pose errors.
-
-        Args:
-            num_epoch: Current epoch number
-            batch_ind: Current batch index
-            cost_val: Current cost value
-        """
+    def _build_metrics_dict(self, num_epoch: int, batch_ind: int, cost_val: torch.Tensor) -> dict:
         from aspire.utils import Rotation
 
-        super().log_training(num_epoch, batch_ind, cost_val)
+        metrics = super()._build_metrics_dict(num_epoch, batch_ind, cost_val)
         if self.gt_data is not None:
             with torch.no_grad():
                 if self.gt_data.rotations is not None:
@@ -1025,31 +993,34 @@ class CovarPoseTrainer(CovarTrainer):
                     in_plane_angle_diff = in_plane_rot_error(
                         torch.tensor(rots_est.matrices), torch.tensor(rots_gt.matrices)
                     )
-                    self.training_log["rot_angle_dist"].append(angle_diff[1])
-                    self.training_log["in_plane_rot_angle_dist"].append(in_plane_angle_diff[1])
+                    metrics["rot_angle_dist"] = angle_diff[1]
+                    metrics["in_plane_rot_angle_dist"] = in_plane_angle_diff[1]
 
                 if self.gt_data.offsets is not None:
                     offsets_est = self.get_pose_module().get_offsets()
                     offsets_gt = self.gt_data.offsets
-                    self.training_log["offsets_mean_dist"].append(
-                        offset_mean_error(offsets_est.cpu(), offsets_gt, L=self.covar.resolution)
+                    metrics["offsets_mean_dist"] = offset_mean_error(
+                        offsets_est.cpu(), offsets_gt, L=self.covar.resolution
                     )
+
                 if self.gt_data.mean is not None:
                     mean_gt = self.gt_data.mean.to(self.device)
                     mean_est = self.get_mean_module().get_volume_spatial_domain()
                     mean_fsc = vol_fsc(mean_gt, mean_est.squeeze(0))
                     mean_fsc = mean_fsc[: mean_gt.shape[-1] // 2].mean()
-                    self.training_log["mean_vol_norm_err"].append(
-                        torch.norm(mean_gt - mean_est).cpu().numpy() / torch.norm(mean_gt).cpu().numpy()
+                    metrics["mean_vol_norm_err"] = float(
+                        torch.norm(mean_gt - mean_est).cpu() / torch.norm(mean_gt).cpu()
                     )
-                    self.training_log["mean_vol_fsc"].append(mean_fsc.cpu().numpy())
+                    metrics["mean_vol_fsc"] = float(mean_fsc.cpu())
+
                 if self.gt_data.contrasts is not None and self.get_pose_module().use_contrast:
                     cont = self.get_pose_module().get_contrasts()
                     cont_gt = self.gt_data.contrasts
-                    cont_mean_err = torch.norm(cont.cpu() - cont_gt, dim=1).mean().numpy()
-                    cont_corr = torch.corrcoef(torch.concat([cont.cpu(), cont_gt.cpu()], dim=1).T)[0, 1].numpy()
-                    self.training_log["contrast_mean_dist"].append(cont_mean_err)
-                    self.training_log["contrast_corr"].append(cont_corr)
+                    metrics["contrast_mean_dist"] = float(torch.norm(cont.cpu() - cont_gt, dim=1).mean())
+                    metrics["contrast_corr"] = float(
+                        torch.corrcoef(torch.concat([cont.cpu(), cont_gt.cpu()], dim=1).T)[0, 1]
+                    )
+        return metrics
 
     def _get_pbar_desc(self, epoch: int) -> str:
         """Get progress bar description with pose information.
@@ -1065,16 +1036,16 @@ class CovarPoseTrainer(CovarTrainer):
             if self.gt_data.rotations is not None:
                 pbar_description += (
                     f" , mean angle dist out-of-plane: "
-                    f"{self.training_log['rot_angle_dist'][-1]:.2e} , "
-                    f"in-plane: {self.training_log['in_plane_rot_angle_dist'][-1]:.2e}"
+                    f"{self._last_metrics['rot_angle_dist']:.2e} , "
+                    f"in-plane: {self._last_metrics['in_plane_rot_angle_dist']:.2e}"
                 )
             if self.gt_data.offsets is not None:
-                pbar_description += f" , offset mean : {self.training_log['offsets_mean_dist'][-1]:.2e}"
+                pbar_description += f" , offset mean : {self._last_metrics['offsets_mean_dist']:.2e}"
             if self.gt_data.contrasts is not None and self.get_pose_module().use_contrast:
-                pbar_description += f" , contrast corr: {self.training_log['contrast_corr'][-1]:.2e}"
+                pbar_description += f" , contrast corr: {self._last_metrics['contrast_corr']:.2e}"
             if self.gt_data.mean is not None:
-                pbar_description += f" , mean vol norm err : {self.training_log['mean_vol_norm_err'][-1]:.2e}"
-                pbar_description += f" , mean vol fsc : {self.training_log['mean_vol_fsc'][-1]:.2e}"
+                pbar_description += f" , mean vol norm err : {self._last_metrics['mean_vol_norm_err']:.2e}"
+                pbar_description += f" , mean vol fsc : {self._last_metrics['mean_vol_fsc']:.2e}"
         return pbar_description
 
     def results_dict(self) -> Dict[str, Any]:
@@ -1120,7 +1091,9 @@ def update_fourier_reg(trainer1: CovarTrainer, trainer2: CovarTrainer) -> None:
     trainer2.update_fourier_reg_halfsets(new_fourier_reg_tensor)
 
     if trainer1.logTraining:
-        trainer1.training_log["covariance_fsc_halfset"] = covariance_fsc
+        trainer1.metrics_logger.log_metrics(
+            {"covariance_fsc_halfset_mean": covariance_fsc.mean().item()}, step=trainer1.epoch_index
+        )
 
 
 def compute_updated_fourier_reg(
