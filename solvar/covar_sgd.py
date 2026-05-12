@@ -37,7 +37,7 @@ from solvar.projection_funcs import (
     preprocess_image_batch,
     vol_forward,
 )
-from solvar.utils import cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs
+from solvar.utils import capturedVariance, cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs
 from solvar.wiener_coords import compute_latentMAP_batch
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ class CovarTrainer:
                         "fro_err_upper_half_res": [],
                         "fro_err_quarter_res": [],
                         "covar_fsc_mean": [],
+                        "captured_var": [],
                     }
                 )
 
@@ -488,6 +489,8 @@ class CovarTrainer:
                 vectorsGT = vectorsGT.reshape((vectorsGT.shape[0], -1))
                 self.training_log["cosine_sim"].append(cosineSimilarity(vectors.detach(), vectorsGT))
 
+                self.training_log["captured_var"].append(capturedVariance(vectors.detach(), vectorsGT))
+
     def _get_pbar_desc(self, epoch: int) -> str:
         """Get progress bar description.
 
@@ -507,7 +510,8 @@ class CovarTrainer:
                 pbar_description
                 + ",  cosine sim : {:.2f}".format(cosine_sim_val)
                 + ", frobenium norm error : {:.2e}".format(fro_err_val)
-                + ", covar fsc mean : {:.2e}".format(self.training_log["covar_fsc_mean"][-1])
+                + ", covar fsc mean : {:.3f}".format(self.training_log["covar_fsc_mean"][-1])
+                + ", captured variance : {:.3f}".format(self.training_log["captured_var"][-1])
             )
         return pbar_description
 

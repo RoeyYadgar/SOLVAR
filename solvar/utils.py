@@ -162,6 +162,20 @@ def principalAngles(vec1, vec2):
     return np.min(np.degrees(principal_angles))
 
 
+def capturedVariance(vec1, vec2):
+    vec1 = vec1.reshape((vec1.shape[0], -1))
+    vec2 = vec2.reshape((vec2.shape[0], -1))
+
+    _, vec1 = torch.linalg.svd(vec1, full_matrices=False)[1:]
+    sigma2, vec2 = torch.linalg.svd(vec2, full_matrices=False)[1:]
+
+    mat1 = sigma2.reshape(-1, 1) * (vec2 @ vec1.T)
+    mat2 = sigma2.reshape(-1, 1) * (vec2 @ vec2.T)
+    captured_variance = torch.trace(mat1.T @ mat1) / torch.trace(mat2.T @ mat2)
+
+    return captured_variance.cpu().numpy()
+
+
 def frobeniusNorm(vecs):
     # returns the frobenius norm of a matrix given by its eigenvectors (multiplied by the corresponding sqrt(eigenval))
     vecs = asnumpy(vecs).reshape((vecs.shape[0], -1))

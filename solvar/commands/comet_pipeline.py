@@ -190,6 +190,7 @@ def run_pipeline(
             "mean_vol_fsc",
             "contrast_corr",
             "contrast_mean_dist",
+            "captured_var",
         ]
         log_metrics_from_dict(exp, training_data, keys_to_log)
 
