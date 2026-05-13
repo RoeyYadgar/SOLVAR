@@ -65,33 +65,32 @@ class CSVMetricsLogger(MetricsLogger):
     def log_metrics(self, metrics: dict, step: int):
         metrics = {"step": step, **metrics}
 
-        # New metric key appears → expand header
         new_keys = [k for k in metrics if k not in self.fieldnames]
         if new_keys:
             self.fieldnames += new_keys
-            self._rewrite_file()
 
-        # Append row (fill missing columns with "")
-        row = {k: metrics.get(k, "") for k in self.fieldnames}
-        self._append_row(row)
+        existing_idx = next((i for i, r in enumerate(self.rows) if r.get("step") == step), None)
+        if existing_idx is not None:
+            self.rows[existing_idx].update(metrics)
+            self._rewrite_file()
+        else:
+            row = {k: metrics.get(k, "") for k in self.fieldnames}
+            self.rows.append(row)
+            if new_keys:
+                self._rewrite_file()
+            else:
+                self._append_row(row)
 
     def _append_row(self, row):
         self.writer.writerow(row)
         self.file_handle.flush()
 
     def _rewrite_file(self):
-        """Rewrite full CSV when header expands."""
-        if not os.path.exists(self.path):
-            return
-
-        with open(self.path, newline="") as f:
-            reader = list(csv.DictReader(f))
-
         self.file_handle.close()
         self.file_handle = open(self.path, "w")
         self.writer = csv.DictWriter(self.file_handle, fieldnames=self.fieldnames)
         self.writer.writeheader()
-        self.writer.writerows(reader)
+        self.writer.writerows([{k: r.get(k, "") for k in self.fieldnames} for r in self.rows])
         self.file_handle.flush()
 
     def __del__(self):
