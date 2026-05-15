@@ -7,7 +7,6 @@ import click
 import comet_ml
 import numpy as np
 import pandas as pd
-import torch
 from aspire.storage import StarFile
 from sklearn.metrics import auc
 
@@ -128,14 +127,10 @@ def run_pipeline(
         output_dir = os.path.join(os.path.split(inputfile)[0], "result_data")
 
     if not skip_computation:
-        data_dict, training_data, training_kwargs = covar_workflow(
-            inputfile, rank, whiten=whiten, mask=mask, **training_kwargs
-        )
+        data_dict, _, training_kwargs = covar_workflow(inputfile, rank, whiten=whiten, mask=mask, **training_kwargs)
     else:
         with open(os.path.join(output_dir, "recorded_data.pkl"), "rb") as fid:
             data_dict = pickle.load(fid)
-
-        training_data = torch.load(os.path.join(output_dir, "training_results.bin"), weights_only=False)
 
     if run_analysis:
         # Only import analysis functions when necesseary
@@ -169,30 +164,6 @@ def run_pipeline(
     if not disable_comet:
         exp.log_parameters(training_kwargs)
         exp.log_metrics({"eigenval_est": data_dict["eigenval_est"]})
-
-        if "eigenvals_GT" in data_dict.keys():
-            metrics = {
-                "frobenius_norm_error": training_data["fro_err"][-1],
-                "eigen_vector_cosine_sim": training_data["cosine_sim"][-1],
-                "covar_fsc": training_data["covar_fsc_mean"][-1],
-                "eigenvals_GT": data_dict["eigenvals_GT"],
-            }
-            exp.log_metrics(metrics)
-            [exp.log_metric(name="fro_norm_err", value=v, step=i) for i, v in enumerate(training_data["fro_err"])]
-            [exp.log_metric(name="covar_fsc", value=v, step=i) for i, v in enumerate(training_data["covar_fsc_mean"])]
-            [exp.log_metric(name="log_epoch_ind", value=v, step=i) for i, v in enumerate(training_data["epoch_ind"])]
-
-        keys_to_log = [
-            "rot_angle_dist",
-            "in_plane_rot_angle_dist",
-            "offsets_mean_dist",
-            "mean_vol_norm_err",
-            "mean_vol_fsc",
-            "contrast_corr",
-            "contrast_mean_dist",
-            "captured_var",
-        ]
-        log_metrics_from_dict(exp, training_data, keys_to_log)
 
         data_artifact = comet_ml.Artifact("produced_data", "data")
         data_artifact.add(os.path.join(output_dir, "recorded_data.pkl"))

@@ -119,6 +119,8 @@ class CometMLMetricsLogger(MetricsLogger):
             self.experiment = experiment
         elif self._should_start_new_experiment(comet_kwargs):
             self.experiment = comet_ml.start(**comet_kwargs)
+        elif (running := comet_ml.get_running_experiment()) is not None:
+            self.experiment = running
         else:
             logging.debug(
                 "No existing CometML experiment found and no new experiment "
