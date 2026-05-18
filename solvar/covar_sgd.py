@@ -101,6 +101,7 @@ class CovarTrainer:
         self.num_reduced_lr_before_stop = 4
         self.scheduler_patiece = 0
         self.fourier_reg = None
+        self.covariance_fsc_halfset = None
         self.epoch_index = 0
 
     @property
@@ -511,6 +512,8 @@ class CovarTrainer:
         ckp = self.covar.state_dict()
         ckp["vectorsGT"] = self.vectorsGT
         ckp["fourier_reg"] = self.fourier_reg
+        if self.covariance_fsc_halfset is not None:
+            ckp["covariance_fsc_halfset"] = self.covariance_fsc_halfset
         return ckp
 
     def save_result(self) -> None:
@@ -1091,9 +1094,7 @@ def update_fourier_reg(trainer1: CovarTrainer, trainer2: CovarTrainer) -> None:
     trainer2.update_fourier_reg_halfsets(new_fourier_reg_tensor)
 
     if trainer1.logTraining:
-        trainer1.metrics_logger.log_metrics(
-            {"covariance_fsc_halfset_mean": covariance_fsc.mean().item()}, step=trainer1.epoch_index
-        )
+        trainer1.covariance_fsc_halfset = covariance_fsc
 
 
 def compute_updated_fourier_reg(
