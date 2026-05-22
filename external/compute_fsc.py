@@ -14,7 +14,7 @@ from glob import glob
 
 import numpy as np
 from CryoBench.metrics.fsc import plot_fsc
-from CryoBench.metrics.fsc.utils import interface, volumes
+from CryoBench.metrics.fsc.utils import conformations, interface, volumes
 from CryoBench.metrics.fsc.utils.volumes import numfile_sortkey
 
 from solvar.recovar_utils import recovarReconstructFromEmbedding
@@ -34,9 +34,6 @@ def add_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         default=50,
         dest="n_bins",
         help="number of bins for reweighting",
-    )
-    parser.add_argument(
-        "--gt-labels", type=str, dest="gt_labels", help="Path to pkl file containing ground truth labels"
     )
     parser.add_argument(
         "--use-gt-dir-as-label",
@@ -67,15 +64,11 @@ def main(args: argparse.Namespace) -> None:
         args.use_gt_dir_label = True
 
     if not args.use_gt_dir_label:
-        with open(args.gt_labels, "rb") as f:
-            gt_labels = pickle.load(f)
-        unique_labels = np.unique(gt_labels)
-        indices_per_unique_state = [np.where(gt_labels == v)[0] for v in unique_labels]
-        random_index_per_state = np.array([np.random.choice(index_set) for index_set in indices_per_unique_state])
+        num_imgs = int(args.num_imgs) if zs.shape[0] == 100000 else "ribo"
+        z_array = conformations.get_nearest_z_array(zs, args.num_vols, num_imgs)
     else:
         random_index_per_state = np.arange(len(gt_vols))
-
-    z_array = zs[random_index_per_state]
+        z_array = zs[random_index_per_state]
 
     z_array = z_array[: args.num_vols]
     gt_vols = gt_vols[: args.num_vols]
