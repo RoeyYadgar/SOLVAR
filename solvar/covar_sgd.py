@@ -11,6 +11,7 @@ from tqdm import tqdm
 from solvar.covar import Covar, Mean
 from solvar.dataset import CovarDataset, GTData, create_dataloader, get_dataloader_batch_size
 from solvar.fsc_utils import (
+    FourierShell,
     average_fourier_shell,
     covar_fsc,
     expand_fourier_shell,
@@ -1121,9 +1122,21 @@ def compute_updated_fourier_reg(
     new_fourier_reg = 1 / ((covariance_fsc / (1 - covariance_fsc)) * filter_gain_shell_correction)
     new_fourier_reg[new_fourier_reg < 0] = 0
 
+    # When using regularization over the eigenvectors voxels
+    # the number of elements to be optimized in each frequency shell
+    # scales down from |S_l|**2 to |S_l|*r.
+    # Since filter_gain_shell correction measures the average gain squared for the covariance block
+    # of the shell S_l, we need to scale it back. (The power ^0.5 is due to SNR of covariance being the
+    # square of SNR of standard signal)
+    r = eigenvecs1.shape[0]
+    scale_term = (FourierShell(L, 3, device=new_fourier_reg.device).shell_size / r) ** 0.5
+    # scale_term = (FourierShell(L,3,device=new_fourier_reg.device).shell_size)**0.5
+    new_fourier_reg = (new_fourier_reg.diag()).sqrt() * scale_term
+    new_fourier_reg[L // 2 :] = new_fourier_reg[: L // 2].max()
+
     # This is a heuristic approach to get a rank 1 approx of the 'regulariztaion matrix'
     # which allows much faster computation of the regularizaiton term
-    new_fourier_reg = expand_fourier_shell(new_fourier_reg.diag().sqrt().unsqueeze(0), L, 3)
+    new_fourier_reg = expand_fourier_shell(new_fourier_reg.unsqueeze(0), L, 3)
 
     if not optimize_in_fourier_domain:
         # When optimizing in spatial domain regularization needs to be scaled by L^2
