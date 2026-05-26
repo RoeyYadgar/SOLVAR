@@ -10,15 +10,7 @@ from tqdm import tqdm
 
 from solvar.covar import Covar, Mean
 from solvar.dataset import CovarDataset, GTData, create_dataloader, get_dataloader_batch_size
-from solvar.fsc_utils import (
-    FourierShell,
-    average_fourier_shell,
-    covar_fsc,
-    expand_fourier_shell,
-    rpsd,
-    upsample_and_expand_fourier_shell,
-    vol_fsc,
-)
+from solvar.fsc_utils import FourierShell, covar_correlate, covar_fsc, rpsd, upsample_and_expand_fourier_shell, vol_fsc
 from solvar.logger import NullMetricsLogger, init_metrics_logger
 from solvar.mean import reconstruct_mean_from_halfsets, reconstruct_mean_from_halfsets_DDP
 from solvar.newton_opt import BlockwiseLBFGS
@@ -413,10 +405,30 @@ class CovarTrainer:
         Args:
             eigenvecs: Covariance eigen vectors estimate
         """
-        eigen_rpsd = rpsd(*eigenvecs) * (self.covar.upsampling_factor**3)
-        self.fourier_reg = (self.noise_var) / upsample_and_expand_fourier_shell(
-            eigen_rpsd, self.covar.resolution * self.covar.upsampling_factor, 3
-        )
+        if self.objective_func == "ml":
+            eigen_rpsd = rpsd(*eigenvecs.to(self.device)) * (self.covar.upsampling_factor**3)
+            self.fourier_reg = (self.noise_var) / upsample_and_expand_fourier_shell(
+                eigen_rpsd, self.covar.resolution * self.covar.upsampling_factor, 3
+            )
+
+        elif self.objective_func == "ls":
+            eigenvecs_fourier = centered_fft3(eigenvecs.to(self.device))
+            cov_rpsd = covar_correlate(eigenvecs_fourier, eigenvecs_fourier).real * (self.covar.upsampling_factor**6)
+            fourier_reg = (self.noise_var**2) / cov_rpsd
+
+            self.fourier_reg = (
+                torch.nn.functional.interpolate(
+                    fourier_reg.unsqueeze(0).unsqueeze(0),
+                    size=tuple(s * 2 for s in fourier_reg.shape),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                .squeeze(0)
+                .squeeze(0)
+            )
+
+        else:
+            raise ValueError(f"Unknown objective function '{self.objective_func}'. Expected 'ml' or 'ls'.")
 
     def update_fourier_reg_halfsets(self, fourier_reg: torch.Tensor) -> None:
         """Update Fourier regularization from half-sets.
@@ -426,12 +438,37 @@ class CovarTrainer:
         """
         fourier_reg = fourier_reg.to(self.device)
 
+        if self.objective_func == "ml":
+            # When using regularization over the eigenvectors voxels
+            # the number of elements to be optimized in each frequency shell
+            # scales down from |S_l|**2 to |S_l|*r.
+            # Since filter_gain_shell correction measures the average gain squared for the covariance block
+            # of the shell S_l, we need to scale it back.
+            scale_term = FourierShell(self.covar.resolution, 3, device=self.device).shell_size / self.covar.rank
+
+            # We estimate the 'eigenvectors SNR^{-1}' by taking the square-root of the diagonal blocks of the
+            # 'covariance SNR^{-1}' (per frequency shell)
+            fourier_reg = (fourier_reg.diag() * scale_term).sqrt()
+
+            # Pad regularization in high frequency shells
+            fourier_reg[self.covar.resolution // 2 :] = fourier_reg[: self.covar.resolution // 2].max()
+
         if self.optimize_in_fourier_domain:
-            # This ensures that the fourier_reg term is in the same as the upsampled size of covar
-            fourier_reg_radial = average_fourier_shell(fourier_reg) / (self.covar.upsampling_factor**3)
-            fourier_reg = upsample_and_expand_fourier_shell(
-                fourier_reg_radial, self.covar.resolution * self.covar.upsampling_factor, 3
-            )
+            # Ensure that the fourier_reg term is in the same as the upsampled size of covar
+            if self.objective_func == "ml":
+                fourier_reg_radial = fourier_reg / (self.covar.upsampling_factor**3)
+                fourier_reg = upsample_and_expand_fourier_shell(
+                    fourier_reg_radial, self.covar.resolution * self.covar.upsampling_factor, 3
+                )
+            elif self.objective_func == "ls":
+                fourier_reg = torch.nn.functional.interpolate(
+                    fourier_reg.unsqueeze(0).unsqueeze(0),
+                    size=tuple(s * 2 for s in fourier_reg.shape),
+                    mode="bilinear",
+                    align_corners=False,
+                ).squeeze(0).squeeze(0) / (self.covar.upsampling_factor**6)
+            else:
+                raise ValueError(f"Unknown objective function '{self.objective_func}'. Expected 'ml' or 'ls'.")
 
         self.fourier_reg = fourier_reg
 
@@ -1122,25 +1159,10 @@ def compute_updated_fourier_reg(
     new_fourier_reg = 1 / ((covariance_fsc / (1 - covariance_fsc)) * filter_gain_shell_correction)
     new_fourier_reg[new_fourier_reg < 0] = 0
 
-    # When using regularization over the eigenvectors voxels
-    # the number of elements to be optimized in each frequency shell
-    # scales down from |S_l|**2 to |S_l|*r.
-    # Since filter_gain_shell correction measures the average gain squared for the covariance block
-    # of the shell S_l, we need to scale it back. (The power ^0.5 is due to SNR of covariance being the
-    # square of SNR of standard signal)
-    r = eigenvecs1.shape[0]
-    scale_term = (FourierShell(L, 3, device=new_fourier_reg.device).shell_size / r) ** 0.5
-    # scale_term = (FourierShell(L,3,device=new_fourier_reg.device).shell_size)**0.5
-    new_fourier_reg = (new_fourier_reg.diag()).sqrt() * scale_term
-    new_fourier_reg[L // 2 :] = new_fourier_reg[: L // 2].max()
-
-    # This is a heuristic approach to get a rank 1 approx of the 'regulariztaion matrix'
-    # which allows much faster computation of the regularizaiton term
-    new_fourier_reg = expand_fourier_shell(new_fourier_reg.unsqueeze(0), L, 3)
-
     if not optimize_in_fourier_domain:
-        # When optimizing in spatial domain regularization needs to be scaled by L^2
-        new_fourier_reg /= L**2
+        # When optimizing in spatial domain regularization needs to be scaled down by L^4
+        # since covariance estimation noise is scaled by L^4 in Fourier.
+        new_fourier_reg /= L**4
 
     return new_fourier_reg, covariance_fsc
 
