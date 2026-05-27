@@ -10,7 +10,16 @@ from tqdm import tqdm
 
 from solvar.covar import Covar, Mean
 from solvar.dataset import CovarDataset, GTData, create_dataloader, get_dataloader_batch_size
-from solvar.fsc_utils import FourierShell, covar_correlate, covar_fsc, rpsd, upsample_and_expand_fourier_shell, vol_fsc
+from solvar.fsc_utils import (
+    FourierShell,
+    covar_correlate,
+    covar_fsc,
+    covar_rpsd,
+    expand_fourier_shell,
+    rpsd,
+    upsample_and_expand_fourier_shell,
+    vol_fsc,
+)
 from solvar.logger import NullMetricsLogger, init_metrics_logger
 from solvar.mean import reconstruct_mean_from_halfsets, reconstruct_mean_from_halfsets_DDP
 from solvar.newton_opt import BlockwiseLBFGS
@@ -329,17 +338,35 @@ class CovarTrainer:
                 vol_shape, upsample_factor=self.covar.upsampling_factor, mode=nufft_disc
             )
             self.dataset.to_fourier_domain()
-            self.cost_func = cost_fourier_domain if objective_func == "ls" else cost_maximum_liklihood_fourier_domain
+
         else:
             self.nufft_plans = NufftPlan(vol_shape, batch_size=rank, dtype=dtype, device=self.device)
             self.dataset.to_spatial_domain()
-            self.cost_func = cost if objective_func == "ls" else cost_maximum_liklihood
+
+        self._construct_cost_func()
         self.covar.init_grid_correction(nufft_disc)
         logger.debug(f"Actual learning rate {lr}")
 
         # The sgd is performed on cost/batch_size + reg_term while its supposed to be sum(cost) + reg_term.
         # This ensures the regularization term scales in the appropriate manner
         self.reg_scale = reg / (len(self.dataset))
+
+    def _construct_cost_func(self):
+        if self.optimize_in_fourier_domain:
+            self.cost_func = (
+                cost_fourier_domain if self.objective_func == "ls" else cost_maximum_liklihood_fourier_domain
+            )
+        else:
+            self.cost_func = cost if self.objective_func == "ls" else cost_maximum_liklihood
+
+        if self.objective_func == "ls":
+            # For least squares objective we also want to pass
+            # a fourier shell bject in order to cache shell idx
+            self.fourier_shell = FourierShell(
+                self.covar.resolution * self.covar.upsampling_factor, 3, self.covar.dtype, device=self.device
+            )
+            _base_cost_func = self.cost_func
+            self.cost_func = lambda *args, **kwargs: _base_cost_func(*args, **kwargs, fourier_shell=self.fourier_shell)
 
     def restart_optimizer(self) -> None:
         """Restart the optimizer with current parameters.
@@ -469,6 +496,8 @@ class CovarTrainer:
                 ).squeeze(0).squeeze(0) / (self.covar.upsampling_factor**6)
             else:
                 raise ValueError(f"Unknown objective function '{self.objective_func}'. Expected 'ml' or 'ls'.")
+        elif self.objective_func == "ml":
+            fourier_reg = expand_fourier_shell(fourier_reg, self.covar.resolution, 3)
 
         self.fourier_reg = fourier_reg
 
@@ -1177,6 +1206,7 @@ def cost(
     fourier_reg=None,
     apply_mean_const_term=False,
     mean_aggregate=True,
+    fourier_shell=None,
 ):
     batch_size = images.shape[0]
     rank = vols.shape[0]
@@ -1205,11 +1235,8 @@ def cost(
     cost_val = torch.mean(cost_val, dim=0) if mean_aggregate else cost_val
 
     if fourier_reg is not None and reg_scale != 0:
-        vols_fourier = centered_fft3(vols)
-        vols_fourier *= torch.sqrt(fourier_reg)
-        vols_fourier = vols_fourier.reshape((rank, -1))
-        vols_fourier_inner_prod = vols_fourier @ vols_fourier.conj().T
-        reg_cost = torch.sum(torch.pow(vols_fourier_inner_prod.abs(), 2))
+        cov_rpsd = covar_rpsd(vols, from_fourier=False, chunked=True, fourier_shell=fourier_shell)
+        reg_cost = (cov_rpsd * fourier_reg).sum()
         cost_val += reg_scale * reg_cost
 
     return cost_val
@@ -1277,8 +1304,8 @@ def cost_fourier_domain(
     fourier_reg=None,
     apply_mean_const_term=False,
     mean_aggregate=True,
+    fourier_shell=None,
 ):
-    rank = vols[0].shape[0]
     L = images.shape[-1]
     projected_vols = vol_forward(vols, nufft_plans, filters, fourier_domain=True)
 
@@ -1288,10 +1315,8 @@ def cost_fourier_domain(
 
     if fourier_reg is not None and reg_scale != 0:
         # TODO: vols should get Covar's grid_correction reversed here
-        vols_fourier = vols * torch.sqrt(fourier_reg)
-        vols_fourier = vols_fourier.reshape((rank, -1))
-        vols_fourier_inner_prod = vols_fourier @ vols_fourier.conj().T
-        reg_cost = torch.sum(torch.pow(vols_fourier_inner_prod.abs(), 2))
+        cov_rpsd = covar_rpsd(vols, from_fourier=True, chunked=True, fourier_shell=fourier_shell)
+        reg_cost = (cov_rpsd * fourier_reg).sum()
         cost_val += reg_scale * reg_cost
 
     return cost_val / (L**4)  # Cost value in fourier domain scales with L^4 compared to spatial domain
