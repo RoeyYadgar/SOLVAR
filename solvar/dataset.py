@@ -753,12 +753,12 @@ class LazyCovarDataset(CovarDataset):
         return super().half_split(False)
 
     def to_fourier_domain(self):
-        if self._in_spatial_domain:
+        if self._in_spatial_domain or self._pose_module is None:
             self.post_init_setup(fourier_domain=True)
             self._in_spatial_domain = False
 
     def to_spatial_domain(self):
-        if not self._in_spatial_domain:
+        if not self._in_spatial_domain or self._pose_module is None:
             self.post_init_setup(fourier_domain=False)
             self._in_spatial_domain = True
 
