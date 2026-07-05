@@ -628,19 +628,20 @@ class CovarPoseTrainer(CovarTrainer):
         super().__init__(covar, train_data, device, save_path, gt_data, training_log_freq)
         self.mean = mean.to(self.device)
         self.pose = pose.to(self.device)
-        self.pose_lr_ratio = 3
+        self.pose_lr_ratio = 10
         self.num_rep = 1
         self.set_pose_grad_req(True)
         self._updated_idx = torch.zeros(len(self.dataset), device=self.device)
 
         self.mean_fourier_reg = None
-        self.scheduler_patiece = 3
+        self.scheduler_patiece = 5
         self.downsample_factor = min(3, int(np.log2(self.covar.resolution / 32)))
         self.mean_est_method = "Reconstruction"
         self.offset_est_method = "Newton"
         self.rotation_est_method = "SGD"
         self.mean_update_frequency = 5
         self.use_eigen_in_contrast_from_epoch = 0
+        self.pose_optimizer = None
 
         if self.mean_est_method != "SGD":
             for param in self.get_mean_module().parameters():
@@ -688,6 +689,7 @@ class CovarPoseTrainer(CovarTrainer):
             pose: New pose module
         """
         self.pose = pose.to(self.device)
+        self.pose_optimizer = None
         if self.offset_est_method != "SGD":
             for param in self.get_pose_module().offsets.parameters():
                 param.requires_grad = False
@@ -990,12 +992,16 @@ class CovarPoseTrainer(CovarTrainer):
         Creates new optimizer and scheduler instances for both covariance and pose optimization.
         """
         super().restart_optimizer()
-        if self.rotation_est_method == "SGD":
-            self.pose_optimizer = torch.optim.SparseAdam(
-                [{"params": self.pose.parameters(), "lr": self.pose_lr_ratio * self.lr}]
-            )
-        elif self.rotation_est_method == "LBFGS":
-            self.pose_optimizer = BlockwiseLBFGS([{"params": self.pose.parameters(), "lr": 1, "step_size_limit": 1e-1}])
+        if self.pose_optimizer is None:
+            # We don't need to restart the pose optimizer if it is already set up
+            if self.rotation_est_method == "SGD":
+                self.pose_optimizer = torch.optim.SparseAdam(
+                    [{"params": self.pose.parameters(), "lr": self.pose_lr_ratio * self.lr}]
+                )
+            elif self.rotation_est_method == "LBFGS":
+                self.pose_optimizer = BlockwiseLBFGS(
+                    [{"params": self.pose.parameters(), "lr": 1, "step_size_limit": 1e-1}]
+                )
 
     def train_epochs(self, max_epochs: int, **training_kwargs: Any) -> None:
         """Train for multiple epochs with progressive downsampling.
@@ -1007,8 +1013,21 @@ class CovarPoseTrainer(CovarTrainer):
         while self.downsample_factor >= 0:
             logger.debug(f"Using downsample factor of {self.downsample_factor}")
             super().train_epochs(max_epochs, restart_optimizer=True)
+
+            with torch.no_grad():
+                lowpassed_covar_eigenvecs = lowpass_volume(
+                    self.covar.get_vectors_spatial_domain(), self.downsample_size // 2, in_fourier=False
+                )
+                self.compute_fourier_reg_term(lowpassed_covar_eigenvecs)
+                self.fourier_reg = lowpass_volume(
+                    self.fourier_reg, self.downsample_size // 2 * self.covar.upsampling_factor, in_fourier=True
+                )
+
             self.downsample_factor -= 1
         self.downsample_factor = 0
+        with torch.no_grad():
+            self.compute_fourier_reg_term(self.covar.get_vectors_spatial_domain())
+        super().train_epochs(max_epochs, restart_optimizer=True)
 
     def compute_fourier_reg_term(self, eigenvecs: Tuple[torch.Tensor, torch.Tensor]) -> None:
         """Compute Fourier domain regularization term for pose optimization.
