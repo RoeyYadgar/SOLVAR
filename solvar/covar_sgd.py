@@ -40,7 +40,7 @@ from solvar.projection_funcs import (
     preprocess_image_batch,
     vol_forward,
 )
-from solvar.utils import capturedVariance, cosineSimilarity, get_cpu_count, project_mean_out_from_eigenvecs
+from solvar.utils import capturedVariance, cosineSimilarity, get_cpu_count
 from solvar.wiener_coords import compute_latentMAP_batch
 
 logger = logging.getLogger(__name__)
@@ -628,7 +628,7 @@ class CovarPoseTrainer(CovarTrainer):
         super().__init__(covar, train_data, device, save_path, gt_data, training_log_freq)
         self.mean = mean.to(self.device)
         self.pose = pose.to(self.device)
-        self.pose_lr_ratio = 10
+        self.pose_lr_ratio = 30
         self.num_rep = 1
         self.set_pose_grad_req(True)
         self._updated_idx = torch.zeros(len(self.dataset), device=self.device)
@@ -931,12 +931,9 @@ class CovarPoseTrainer(CovarTrainer):
 
         if self.get_pose_module().use_contrast:
             with torch.no_grad():
-                projected_vecs = project_mean_out_from_eigenvecs(
-                    self.covar.get_vectors_spatial_domain(), self.mean.get_volume_spatial_domain()
-                )
-                self.covar.vectors.data.copy_(
-                    projected_vecs / torch.exp(self.covar.log_sqrt_eigenvals).reshape(-1, 1, 1, 1)
-                )
+                normalized_contrast = self.get_pose_module().get_contrasts()
+                normalized_contrast /= torch.mean(normalized_contrast)
+                self.get_pose_module().set_contrasts(normalized_contrast)
 
         if epoch % self.mean_update_frequency == self.mean_update_frequency - 1:
             if self.offset_est_method == "Newton":
@@ -1014,17 +1011,9 @@ class CovarPoseTrainer(CovarTrainer):
             logger.debug(f"Using downsample factor of {self.downsample_factor}")
             super().train_epochs(max_epochs, restart_optimizer=True)
 
-            with torch.no_grad():
-                lowpassed_covar_eigenvecs = lowpass_volume(
-                    self.covar.get_vectors_spatial_domain(), self.downsample_size // 2, in_fourier=False
-                )
-                self.compute_fourier_reg_term(lowpassed_covar_eigenvecs)
-                self.fourier_reg = lowpass_volume(
-                    self.fourier_reg, self.downsample_size // 2 * self.covar.upsampling_factor, in_fourier=True
-                )
-
             self.downsample_factor -= 1
         self.downsample_factor = 0
+
         with torch.no_grad():
             self.compute_fourier_reg_term(self.covar.get_vectors_spatial_domain())
         super().train_epochs(max_epochs, restart_optimizer=True)
